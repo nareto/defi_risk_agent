@@ -11,7 +11,6 @@ pydantic = "^2.11.7"
 pydantic-settings = "^2.10.1"
 python-dotenv = "^1.1.1"
 requests = "^2.32.4"
-dataclass-wizard = "^0.35.1"
 
 
 [tool.poetry.group.dev.dependencies]
