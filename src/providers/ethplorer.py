@@ -1,11 +1,16 @@
 import requests
 import datetime as dt
 from decimal import Decimal
+from langchain_core.tools import tool
 
-def get_token_market_cap_and_creation_date(address):
+
+@tool
+def api_ethplorer_token_data(address: str):
+    """Fetch token data for the contract address"""
     out = requests.get(
         f"https://api.ethplorer.io/getTokenInfo/{address}?apiKey=freekey"
     ).json()
+    return out
     # {
     #   "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
     #   "decimals": "6",
@@ -41,10 +46,10 @@ def get_token_market_cap_and_creation_date(address):
     #   "ethTransfersCount": 0,
     #   "countOps": 155637104
     # }
-    return {
-        "symbol": out["symbol"],
-        "market_cap_usd": Decimal(str(out["price"]["marketCapUsd"])),
-        "creation_date_isoformat": dt.datetime.fromtimestamp(
-            out["contractInfo"]["creationTimestamp"]
-        ).isoformat(),
-    }
+    # return {
+    #     "symbol": out["symbol"],
+    #     "market_cap_usd": Decimal(str(out["price"]["marketCapUsd"])),
+    #     "creation_date_isoformat": dt.datetime.fromtimestamp(
+    #         out["contractInfo"]["creationTimestamp"]
+    #     ).isoformat(),
+    # }

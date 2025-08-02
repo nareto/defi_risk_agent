@@ -1,23 +1,14 @@
-#%%
-
-"""
-Minimal Moralis wallet helper.
-  pip install requests
-  export MORALIS_API_KEY="your_key_here"
-"""
-
 import os
+import pprint
+
 import requests
-from dotenv import load_dotenv
-
-load_dotenv()
-
-import os, requests, pprint
+from langchain_core.tools import tool
 
 BASE   = "https://deep-index.moralis.io/api/v2.2"
 HEAD   = {"X-API-Key": os.getenv("MORALIS_API_KEY")}
 
-def get_token_balances(address: str, chain: str = "eth", limit: int = 500):
+@tool
+def api_moralis_wallet_portfolio(address: str, chain: str = "eth", limit: int = 500):
     """Return ERC-20 token balances (USD prices included)."""
     url    = f"{BASE}/{address}/erc20"
     params = {"chain": chain, "limit": limit}
@@ -38,7 +29,8 @@ def get_token_balances(address: str, chain: str = "eth", limit: int = 500):
     # 'percentage_relative_to_total_supply': 0.002563684,
     # 'security_score': None}
 
-def get_wallet_history(address: str, chain: str = "eth",
+@tool
+def api_moralis_wallet_history(address: str, chain: str = "eth",
                        cursor: str | None = None, page_size: int = 100):
     """
     Return one page of decoded wallet history.

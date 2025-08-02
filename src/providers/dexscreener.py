@@ -1,6 +1,8 @@
 import requests
+from langchain_core.tools import tool
 
-def get_token_data(network: str, token_addresses: str):
+@tool
+def api_dexscreener_token_data(network: str, token_addresses: str):
     """
     Fetches token information from DexScreener API.
     `network`: e.g., 'ethereum', 'bsc'
@@ -32,7 +34,8 @@ def get_token_data(network: str, token_addresses: str):
     #   'priceChange': {},
     #   'liquidity': {'usd': 74768.45, 'base': 86414, 'quote': 10.698},
     #   'pairCreatedAt': 1719047087000}]
-    return {
-        'symbol'@ data['quoteToken']['']
-    }
+    # return {
+    #     'symbol'@ data['quoteToken']['']
+    # }
+    return data
 

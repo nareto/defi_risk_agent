@@ -1,11 +1,3 @@
-"""defi_risk_agent.py – LangGraph demo with structured logging & fence-tolerant summary
-
-Tested with:
-  • LangGraph 0.6.2
-  • LangChain 0.3.27
-  • Python 3.13
-"""
-
 import json
 import logging
 import operator
@@ -23,12 +15,11 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
-from langchain_core.tools import tool, BaseTool
+from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
-# ─────────────────────────────── 0. logging ────────────────────────────────
 
 logger = logging.getLogger("defi_agent")
 logger.setLevel(logging.INFO)
@@ -55,94 +46,6 @@ except ImportError:  # older version / missing module
 
 # ─────────────────────────── 2. Pydantic models ───────────────────────────
 
-class ExoticAsset(BaseModel):
-    symbol: str
-    usd_value: float
-    market_cap_rank: int | None = Field(description="None if unranked")
-
-
-class ExoticAssetExposureInput(BaseModel):
-    assets: List[ExoticAsset]
-
-
-class ExoticAssetExposureOutput(BaseModel):
-    metric_name: str = "Exotic & Unproven Asset Exposure"
-    percentage_exposure: float
-    description: str
-
-
-class PortfolioConcentrationInput(BaseModel):
-    asset_values: List[float]
-
-
-class PortfolioConcentrationOutput(BaseModel):
-    metric_name: str = "Portfolio Concentration Index (HHI)"
-    hhi_score: float
-
-
-class RiskSummaryOutput(BaseModel):
-    risk_score: float = Field(ge=0, le=100)
-    justification: str
-
-# ──────────────────────── 3. Tool definitions ─────────────────────────────
-
-@tool
-def api_provider1_get_wallet_holdings(address: str) -> Dict[str, Any]:
-    """Mock provider that *always* fails to simulate downtime."""
-    raise ConnectionError("Provider 1 API is down")
-
-
-@tool
-def api_provider2_get_wallet_holdings(address: str) -> Dict[str, Any]:
-    """Mock provider that returns static wallet holdings."""
-    logger.info("provider2: returning mock wallet holdings")
-    return {
-        "wallet": address,
-        "tokens": [
-            {"symbol": "WETH", "value_usd": 7_000},
-            {"symbol": "PEPE", "value_usd": 12.5},
-            {"symbol": "UNKNOWN_TKN", "value_usd": 150},
-        ],
-    }
-
-
-@tool
-def api_get_token_market_data(symbols: List[str]) -> Dict[str, Any]:
-    """Return dummy market-cap ranks for a list of symbols."""
-    logger.info("market-data mock for %s", symbols)
-    ranks = {"WETH": 2, "PEPE": 95}
-    return {s: {"rank": ranks.get(s)} for s in symbols}
-
-
-@tool
-def metric_calculate_exotic_asset_exposure(
-    data: ExoticAssetExposureInput,
-) -> ExoticAssetExposureOutput:
-    """Percent USD in assets ranked >200 or unranked."""
-    total = sum(a.usd_value for a in data.assets)
-    if total == 0:
-        return ExoticAssetExposureOutput(percentage_exposure=0, description="Wallet empty")
-    exotic_val = sum(
-        a.usd_value for a in data.assets if a.market_cap_rank is None or a.market_cap_rank > 200
-    )
-    pct = exotic_val / total * 100
-    return ExoticAssetExposureOutput(
-        percentage_exposure=pct,
-        description=f"{pct:.2f}% of value in assets ranked >200 or unranked.",
-    )
-
-
-@tool
-def metric_calculate_portfolio_concentration(
-    data: PortfolioConcentrationInput,
-) -> PortfolioConcentrationOutput:
-    """Compute the Herfindahl-Hirschman Index (0 diversified → 1 concentrated)."""
-    total = sum(data.asset_values)
-    if total == 0:
-        return PortfolioConcentrationOutput(hhi_score=0)
-    hhi = sum((v / total) ** 2 for v in data.asset_values)
-    return PortfolioConcentrationOutput(hhi_score=hhi)
-
 # ───────────────────────── 4. Agent state & constants ─────────────────────
 
 class AgentState(TypedDict):
@@ -157,12 +60,25 @@ EXPECTED_METRICS: Set[str] = {
     "Portfolio Concentration Index (HHI)",
 }
 
-# ─────────────────────── 5. LLM + executor setup ──────────────────────────
+# TOOLS
+from src.providers.alchemy import api_alchemy_tx_history, api_alchemy_portfolio
+from src.providers.coingecko import api_coingecko_coin_data, api_coingecko_contract
+from src.providers.dexscreener import api_dexscreener_token_data
+from src.providers.ethplorer import api_ethplorer_token_data
+from src.providers.goplus import api_goplus_token_security
+from src.providers.moralis import api_moralis_wallet_history, api_moralis_wallet_portfolio
+
 
 TOOLS = [
-    api_provider1_get_wallet_holdings,
-    api_provider2_get_wallet_holdings,
-    api_get_token_market_data,
+    api_alchemy_tx_history,
+    api_alchemy_portfolio,
+    api_coingecko_coin_data,
+    api_coingecko_contract,
+    api_dexscreener_token_data,
+    api_ethplorer_token_data,
+    api_goplus_token_security,
+    api_moralis_wallet_history,
+    api_moralis_wallet_portfolio,
     metric_calculate_exotic_asset_exposure,
     metric_calculate_portfolio_concentration,
 ]
@@ -174,8 +90,8 @@ llm_with_tools = llm_core.bind_tools(TOOLS)
 SYSTEM_PROMPT = (
     "You are a DeFi-risk agent. 1) Decide which metric_* tools are needed. 2) "
     "Gather data with api_* calls. 3) Build Pydantic inputs and call metric_* "
-    "tools. If api_provider1_* fails, switch to provider2_* automatically. 4) "
-    "Stop after all metrics are produced."
+    "tools. If an api_* tool fails, or you hit the rate limit, switch to another api_* tool. 4) "
+    "Stop after all metrics are produced or when you can't call anymore api_* tools."
 )
 
 # ───────────────────────────── 6. Graph nodes ─────────────────────────────

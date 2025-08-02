@@ -1,23 +1,19 @@
 # %%
 
-import os, requests, pprint
-from dotenv import load_dotenv
-
-load_dotenv()
-
-API_KEY = os.environ["ALCHEMY_API_KEY"]
-
-import os, decimal, requests, pprint
-from decimal import Decimal
+import os
+import typing as t
+import requests
+from langchain_core.tools import tool
 
 API = os.environ["ALCHEMY_API_KEY"]
 BASE = f"https://api.g.alchemy.com/data/v1/{API}"
 
-
-def get_portfolio(addr, network="eth-mainnet"):
+@tool
+def api_alchemy_portfolio(address: str, network: str="eth-mainnet"):
+    """Fetch portfolio of tokens for address"""
     url = f"{BASE}/assets/tokens/by-address"
     body = {
-        "addresses": [{"address": addr, "networks": [network]}],
+        "addresses": [{"address": address, "networks": [network]}],
         "withMetadata": True,
         "withPrices": True,
         "includeNativeTokens": True,
@@ -87,37 +83,38 @@ def get_portfolio(addr, network="eth-mainnet"):
     #     "pageKey": null
     #   }
     # }
-    tokens = requests.post(url, json=body, timeout=30).json()["data"]["tokens"]
-    clean = []
-    for t in tokens:
-        bal_hex = t["tokenBalance"]
-        raw = int(bal_hex, 16)  # ① hex → int
-        decs = t["tokenMetadata"].get("decimals") or 18  # ② scale
-        human = Decimal(raw) / (10 ** int(decs))
+    return requests.post(url, json=body, timeout=30).json()
+    # tokens = requests.post(url, json=body, timeout=30).json()["data"]["tokens"]
+    # clean = []
+    # for t in tokens:
+    #     bal_hex = t["tokenBalance"]
+    #     raw = int(bal_hex, 16)  # ① hex → int
+    #     decs = t["tokenMetadata"].get("decimals") or 18  # ② scale
+    #     human = Decimal(raw) / (10 ** int(decs))
 
-        # pick the first USD quote if it exists
-        price_rows = [p for p in t["tokenPrices"] if p["currency"].lower() == "usd"]
-        price = Decimal(price_rows[0]["value"]) if price_rows else Decimal(0)
+    #     # pick the first USD quote if it exists
+    #     price_rows = [p for p in t["tokenPrices"] if p["currency"].lower() == "usd"]
+    #     price = Decimal(price_rows[0]["value"]) if price_rows else Decimal(0)
 
-        if t["tokenAddress"] is None:
-            symbol = "ETH"
-        else:
-            symbol = t["tokenMetadata"].get("symbol")
-        clean.append(
-            {
-                "token_address": t['tokenAddress'],
-                "symbol": symbol,
-                "balance": human,
-                "usd_price": price,
-                "usd_value": human * price,
-            }
-        )
+    #     if t["tokenAddress"] is None:
+    #         symbol = "ETH"
+    #     else:
+    #         symbol = t["tokenMetadata"].get("symbol")
+    #     clean.append(
+    #         {
+    #             "token_address": t["tokenAddress"],
+    #             "symbol": symbol,
+    #             "balance": human,
+    #             "usd_price": price,
+    #             "usd_value": human * price,
+    #         }
+    #     )
 
-    return sorted(clean, key=lambda x: x["usd_value"], reverse=True)
+    # return sorted(clean, key=lambda x: x["usd_value"], reverse=True)
 
-
-def get_history(address, network="eth-mainnet", limit=50, after=None):
-    """Fetch one page of historical tx; pass `after` to page forward."""
+@tool
+def api_alchemy_tx_history(address: str, network: str="eth-mainnet", limit:int=50, after: t.Optional[int]=None):
+    """Fetch one page of historical tx for the address; pass `after` to page forward."""
     url = f"{BASE}/transactions/history/by-address"
     payload = {
         "addresses": [{"address": address, "networks": [network]}],

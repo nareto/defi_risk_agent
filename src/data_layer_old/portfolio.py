@@ -1,4 +1,4 @@
-from src.providers.alchemy import get_portfolio as get_alchemy_portfolio
+from src.providers.alchemy import api_alchemy_portfolio as get_alchemy_portfolio
 
 def get_portfolio(wallet):
     alchemy_portfolio = get_alchemy_portfolio(wallet)

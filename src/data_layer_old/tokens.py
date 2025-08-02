@@ -1,8 +1,8 @@
 from src.providers.coingecko import (
-    get_token_marketcap_and_rank,
-    get_coin_marketcap_and_rank,
+    api_coingecko_contract,
+    api_coingecko_coin_data,
 )
-from src.providers.ethplorer import get_token_market_cap_and_creation_date
+from src.providers.ethplorer import api_ethplorer_token_data
 from src.providers.dexscreener import get_token_info
 import datetime as dt
 
@@ -14,13 +14,13 @@ def get_token_or_coin_info(address, network ='ethereum'):
 
 def get_token_info(address):
     token_info_providers = {
-        'coingecko': get_token_marketcap_and_rank,
-        'ethplorer': get_token_market_cap_and_creation_date,
+        'coingecko': api_coingecko_contract,
+        'ethplorer': api_ethplorer_token_data,
         'dexscreener': get_token_info
     }
 
-    cg_token_data = get_token_marketcap_and_rank(address)
-    ep_token_data = get_token_market_cap_and_creation_date(address)
+    cg_token_data = api_coingecko_contract(address)
+    ep_token_data = api_ethplorer_token_data(address)
     lifetime = (
         dt.datetime.now()
         - dt.datetime.fromisoformat(ep_token_data["creation_date_isoformat"])
@@ -35,7 +35,7 @@ def get_token_info(address):
 
 
 def get_coin_info(network):
-    cg_coin = get_coin_marketcap_and_rank(network)
+    cg_coin = api_coingecko_coin_data(network)
     return {
         "symbol": cg_coin["symbol"],
         "market_cap_usd": cg_coin["market_cap_usd"],
