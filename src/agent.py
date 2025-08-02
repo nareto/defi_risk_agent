@@ -143,7 +143,11 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
     else:
         convo = [SystemMessage(system_prompt)] + messages
 
-    logger.info("LLM→ messages: %s", [m.content[:80] for m in convo])
+    logger.info(
+        f"Turn {state['turn_count']}/{state['max_turns']}: Sending {len(convo)} messages to LLM",
+    )
+    # The [m.content[:80] for m in convo] part is for brevity in logs
+    logger.debug("LLM→ messages: %s", [m.content[:80] for m in convo])
     ai_msg: AIMessage = state["llm_with_tools"].invoke(convo)  # type: ignore
     logger.info("LLM← tool_calls: %s", ai_msg.tool_calls)
     return {"messages": [ai_msg], "logs": ["AI decided tool calls"], "turn_count": 1}

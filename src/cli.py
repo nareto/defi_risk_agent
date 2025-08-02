@@ -59,7 +59,7 @@ def main():
         if args.verbose and state["logs"]:
             print("\n".join(state["logs"][-5:]))
         if args.verbose:
-            print("\n" + "─" * 80)
+            print("\n" + f"─── Turn {state.get('turn_count', 0)}/{state.get('max_turns', 10)} " + "─" * 60)
             if state.get("messages"):
                 msg = state["messages"][-1]
                 if hasattr(msg, 'tool_calls') and msg.tool_calls:
