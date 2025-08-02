@@ -4,10 +4,12 @@ import os
 import typing as t
 import requests
 from langchain_core.tools import tool
+from src.utils import rate_limit
 
 API = os.environ["ALCHEMY_API_KEY"]
 BASE = f"https://api.g.alchemy.com/data/v1/{API}"
 
+@rate_limit(max_calls=2, period_seconds=10)
 @tool
 def api_alchemy_portfolio(address: str, network: str="eth-mainnet"):
     """Fetch portfolio of tokens for address"""
@@ -112,6 +114,7 @@ def api_alchemy_portfolio(address: str, network: str="eth-mainnet"):
 
     # return sorted(clean, key=lambda x: x["usd_value"], reverse=True)
 
+@rate_limit(max_calls=2, period_seconds=10)
 @tool
 def api_alchemy_tx_history(address: str, network: str="eth-mainnet", limit:int=50, after: t.Optional[int]=None):
     """Fetch one page of historical tx for the address; pass `after` to page forward."""

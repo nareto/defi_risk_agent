@@ -27,11 +27,6 @@ class PortfolioConcentrationOutput(BaseModel):
     hhi_score: float
 
 
-class RiskSummaryOutput(BaseModel):
-    risk_score: float = Field(ge=0, le=100)
-    justification: str
-
-
 @tool
 def metric_calculate_exotic_asset_exposure(
     data: ExoticAssetExposureInput,

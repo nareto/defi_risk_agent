@@ -3,10 +3,12 @@ import pprint
 
 import requests
 from langchain_core.tools import tool
+from src.utils import rate_limit
 
 BASE   = "https://deep-index.moralis.io/api/v2.2"
 HEAD   = {"X-API-Key": os.getenv("MORALIS_API_KEY")}
 
+@rate_limit(max_calls=2, period_seconds=10)
 @tool
 def api_moralis_wallet_portfolio(address: str, chain: str = "eth", limit: int = 500):
     """Return ERC-20 token balances (USD prices included)."""
@@ -29,6 +31,7 @@ def api_moralis_wallet_portfolio(address: str, chain: str = "eth", limit: int = 
     # 'percentage_relative_to_total_supply': 0.002563684,
     # 'security_score': None}
 
+@rate_limit(max_calls=2, period_seconds=10)
 @tool
 def api_moralis_wallet_history(address: str, chain: str = "eth",
                        cursor: str | None = None, page_size: int = 100):

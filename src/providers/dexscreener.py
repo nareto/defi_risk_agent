@@ -1,6 +1,8 @@
 import requests
 from langchain_core.tools import tool
+from src.utils import rate_limit
 
+@rate_limit(max_calls=2, period_seconds=10)
 @tool
 def api_dexscreener_token_data(network: str, token_addresses: str):
     """

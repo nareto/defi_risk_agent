@@ -1,7 +1,9 @@
 
 import requests
 from langchain_core.tools import tool
+from src.utils import rate_limit
 
+@rate_limit(max_calls=2, period_seconds=10)
 @tool
 def api_goplus_token_security(address: str, chain_id: int = 1):
     """
