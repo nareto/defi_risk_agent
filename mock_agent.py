@@ -1,11 +1,13 @@
-"""defi_risk_agent.py – self‑contained LangGraph demo with verbose logging
+"""defi_risk_agent.py – LangGraph demo with structured logging & fence-tolerant summary
 
-This revision fixes repeated returns, ensures successful mock data flow, and
-adds detailed print‑based logging so you can watch every decision the agent
-makes.  Tested with LangGraph 0.6.2, LangChain 0.3.27, and Python 3.13.
+Tested with:
+  • LangGraph 0.6.2
+  • LangChain 0.3.27
+  • Python 3.13
 """
 
 import json
+import logging
 import operator
 from pprint import pformat
 from typing import Annotated, Any, Callable, Dict, List, Set, TypedDict
@@ -17,7 +19,6 @@ load_dotenv()
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
-    FunctionMessage,
     HumanMessage,
     SystemMessage,
     ToolMessage,
@@ -27,32 +28,32 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
-# ===========================================================================
-# 0.  ToolExecutor import (portable) – and a shim that calls .invoke()
-# ===========================================================================
+# ─────────────────────────────── 0. logging ────────────────────────────────
+
+logger = logging.getLogger("defi_agent")
+logger.setLevel(logging.INFO)
+logger.addHandler(logging.StreamHandler())
+
+# ───────────── 1. portable ToolExecutor import (with shim) ────────────────
 
 try:
     from langgraph.prebuilt.tool_executor import ToolExecutor  # type: ignore
-except ImportError:  # LangGraph < 0.3.x or other install
+except ImportError:  # older version / missing module
 
     class ToolExecutor:  # type: ignore
-        """Very small subset of the real executor (invoke only)."""
+        """Tiny substitute that supports .invoke()."""
 
         def __init__(self, tools: List[Callable]):
             self._tools = {t.name: t for t in tools}
 
         def invoke(self, call_spec: Dict[str, Any]):
-            name: str = call_spec["name"]
-            args: Dict[str, Any] = call_spec.get("arguments") or {}
-            tool_obj = self._tools[name]
-            # Newer BaseTool objects expose .invoke(); raw callables don’t.
-            if isinstance(tool_obj, BaseTool):  # type: ignore
-                return tool_obj.invoke(args)  # type: ignore[arg-type]
-            return tool_obj(**args)  # fall back to plain fn call
+            name, args = call_spec["name"], call_spec.get("arguments", {})
+            tool = self._tools[name]
+            if isinstance(tool, BaseTool):  # type: ignore
+                return tool.invoke(args)
+            return tool(**args)
 
-# ===========================================================================
-# 1.  Typed metric models
-# ===========================================================================
+# ─────────────────────────── 2. Pydantic models ───────────────────────────
 
 class ExoticAsset(BaseModel):
     symbol: str
@@ -80,29 +81,21 @@ class PortfolioConcentrationOutput(BaseModel):
 
 
 class RiskSummaryOutput(BaseModel):
-    """Final analyst‑style wallet risk assessment."""
-
-    risk_score: float = Field(ge=0, le=100, description="0 (no risk) – 100 (max risk)")
+    risk_score: float = Field(ge=0, le=100)
     justification: str
 
-
-
-# ===========================================================================
-# 2.  Tools – API mocks + metric calculators
-# ===========================================================================
+# ──────────────────────── 3. Tool definitions ─────────────────────────────
 
 @tool
 def api_provider1_get_wallet_holdings(address: str) -> Dict[str, Any]:
-    """Mock provider 1 – always fails (simulating downtime)."""
-
+    """Mock provider that *always* fails to simulate downtime."""
     raise ConnectionError("Provider 1 API is down")
 
 
 @tool
 def api_provider2_get_wallet_holdings(address: str) -> Dict[str, Any]:
-    """Mock provider 2 – returns a static wallet snapshot."""
-
-    print("[LOG] provider2 returning mock wallet holdings")
+    """Mock provider that returns static wallet holdings."""
+    logger.info("provider2: returning mock wallet holdings")
     return {
         "wallet": address,
         "tokens": [
@@ -115,19 +108,17 @@ def api_provider2_get_wallet_holdings(address: str) -> Dict[str, Any]:
 
 @tool
 def api_get_token_market_data(symbols: List[str]) -> Dict[str, Any]:
-    """Return dummy market‑cap ranks for requested symbols."""
-
-    print(f"[LOG] market‑data mock called for: {symbols}")
-    mapping = {"WETH": 2, "PEPE": 95}
-    return {s: {"rank": mapping.get(s)} for s in symbols}
+    """Return dummy market-cap ranks for a list of symbols."""
+    logger.info("market-data mock for %s", symbols)
+    ranks = {"WETH": 2, "PEPE": 95}
+    return {s: {"rank": ranks.get(s)} for s in symbols}
 
 
 @tool
 def metric_calculate_exotic_asset_exposure(
     data: ExoticAssetExposureInput,
 ) -> ExoticAssetExposureOutput:
-    """Percent of USD value in assets ranked > 200 or unranked."""
-
+    """Percent USD in assets ranked >200 or unranked."""
     total = sum(a.usd_value for a in data.assets)
     if total == 0:
         return ExoticAssetExposureOutput(percentage_exposure=0, description="Wallet empty")
@@ -137,7 +128,7 @@ def metric_calculate_exotic_asset_exposure(
     pct = exotic_val / total * 100
     return ExoticAssetExposureOutput(
         percentage_exposure=pct,
-        description=f"{pct:.2f}% of portfolio is in assets ranked >200 or unranked.",
+        description=f"{pct:.2f}% of value in assets ranked >200 or unranked.",
     )
 
 
@@ -145,33 +136,28 @@ def metric_calculate_exotic_asset_exposure(
 def metric_calculate_portfolio_concentration(
     data: PortfolioConcentrationInput,
 ) -> PortfolioConcentrationOutput:
-    """Herfindahl‑Hirschman Index (0 diversified ⟶ 1 concentrated)."""
-
+    """Compute the Herfindahl-Hirschman Index (0 diversified → 1 concentrated)."""
     total = sum(data.asset_values)
     if total == 0:
         return PortfolioConcentrationOutput(hhi_score=0)
     hhi = sum((v / total) ** 2 for v in data.asset_values)
     return PortfolioConcentrationOutput(hhi_score=hhi)
 
-
-# ===========================================================================
-# 3.  Agent state + constants
-# ===========================================================================
+# ───────────────────────── 4. Agent state & constants ─────────────────────
 
 class AgentState(TypedDict):
     input_address: str
     input_request: str
     messages: Annotated[List[BaseMessage], operator.add]
     metrics: Annotated[List[BaseModel], operator.add]
+    logs: Annotated[List[str], operator.add]
 
 EXPECTED_METRICS: Set[str] = {
     "Exotic & Unproven Asset Exposure",
     "Portfolio Concentration Index (HHI)",
 }
 
-# ===========================================================================
-# 4.  LLM and executor setup
-# ===========================================================================
+# ─────────────────────── 5. LLM + executor setup ──────────────────────────
 
 TOOLS = [
     api_provider1_get_wallet_holdings,
@@ -186,128 +172,110 @@ llm_core = ChatOpenAI(model="gpt-4o", temperature=0, streaming=False)
 llm_with_tools = llm_core.bind_tools(TOOLS)
 
 SYSTEM_PROMPT = (
-    "You are a DeFi‑risk agent. 1) Decide which metric_* tools are needed. 2) "
+    "You are a DeFi-risk agent. 1) Decide which metric_* tools are needed. 2) "
     "Gather data with api_* calls. 3) Build Pydantic inputs and call metric_* "
     "tools. If api_provider1_* fails, switch to provider2_* automatically. 4) "
     "Stop after all metrics are produced."
 )
 
-# ===========================================================================
-# 5.  Graph nodes with logging
-# ===========================================================================
+# ───────────────────────────── 6. Graph nodes ─────────────────────────────
 
 def node_llm(state: AgentState) -> Dict[str, Any]:
-    """Brain – requests tool calls."""
-
-    conv: List[BaseMessage]
     if not state["messages"]:
-        conv = [
+        convo = [
             SystemMessage(SYSTEM_PROMPT),
-            HumanMessage(content=f"{state['input_request']} for wallet {state['input_address']}")
+            HumanMessage(content=f"{state['input_request']} for wallet {state['input_address']}"),
         ]
     else:
-        conv = [SystemMessage(SYSTEM_PROMPT)] + state["messages"]
+        convo = [SystemMessage(SYSTEM_PROMPT)] + state["messages"]
 
-    print("\n[LOG] === LLM conversation sent ===")
-    for m in conv:
-        role = m.__class__.__name__[:3].upper()
-        snippet = m.content[:120] if hasattr(m, "content") else str(m)[:120]
-        print(f"{role}: {snippet}")
-    print("[LOG] === end conversation ===\n")
-
-    ai_out: AIMessage = llm_with_tools.invoke(conv)  # type: ignore
-    print("[LOG] LLM decided tool_calls:", ai_out.tool_calls)
-    return {"messages": [ai_out]}
+    logger.info("LLM→ messages: %s", [m.content[:80] for m in convo])
+    ai_msg: AIMessage = llm_with_tools.invoke(convo)  # type: ignore
+    logger.info("LLM← tool_calls: %s", ai_msg.tool_calls)
+    return {"messages": [ai_msg], "logs": ["AI decided tool calls"]}
 
 
 def node_tools(state: AgentState) -> Dict[str, Any]:
-    """Execute all tool calls, translating 'args'→'arguments' for executor."""
-
     ai_msg: AIMessage = state["messages"][-1]
     out: List[BaseMessage] = []
     new_metrics: List[BaseModel] = []
+    logs: List[str] = []
 
     for tc in ai_msg.tool_calls:
         name, call_id = tc["name"], tc["id"]
-        # OpenAI returns key "args" whereas LangGraph's executor expects "arguments".
-        call_spec = {
-            "name": name,
-            "arguments": tc.get("args") or tc.get("arguments") or {},
-        }
-        print(f"[LOG] Executing tool: {name}  id={call_id}  args={call_spec['arguments']}")
+        args = tc.get("args") or tc.get("arguments") or {}
+        logger.info("Executing %s args=%s", name, args)
         try:
-            result = tool_executor.invoke(call_spec)
-            print("[LOG] → result:", pformat(result))
+            result = tool_executor.invoke({"name": name, "arguments": args})
+            logger.info("→ %s", pformat(result))
+            logs.append(f"{name} ok")
             if isinstance(result, (ExoticAssetExposureOutput, PortfolioConcentrationOutput)):
                 new_metrics.append(result)
-                out.append(ToolMessage(content=result.json(), tool_call_id=call_id))
+                out.append(ToolMessage(content=result.model_dump_json(), tool_call_id=call_id))
             else:
                 out.append(ToolMessage(content=json.dumps(result), tool_call_id=call_id))
-        except Exception as exc:  # pylint: disable=broad-except
-            print("[LOG] !!! tool error:", exc)
+        except Exception as exc:  # demo: broad catch
+            logger.warning("%s error: %s", name, exc)
+            logs.append(f"{name} error {exc}")
             out.append(ToolMessage(content=f"Tool error: {exc}", tool_call_id=call_id))
 
-    payload: Dict[str, Any] = {"messages": out}
+    payload: Dict[str, Any] = {"messages": out, "logs": logs}
     if new_metrics:
         payload["metrics"] = new_metrics
     return payload
 
 
 def decide_next(state: AgentState) -> str:
-    obtained = {m.metric_name for m in state["metrics"]}
-    last_msg = state["messages"][-1]
-    if obtained.issuperset(EXPECTED_METRICS):
+    produced = {m.metric_name for m in state["metrics"]}
+    last_ai = state["messages"][-1]
+    if produced.issuperset(EXPECTED_METRICS):
         return "summarize"
-    if isinstance(last_msg, AIMessage) and last_msg.tool_calls:
+    if isinstance(last_ai, AIMessage) and last_ai.tool_calls:
         return "continue"
     return "end"
 
 
 def node_summarize(state: AgentState) -> Dict[str, Any]:
-    """Call LLM once more and validate it returns JSON with numeric score."""
-
-    metrics_blob = "\n".join(m.json() for m in state["metrics"])
+    metrics_blob = "\n".join(m.model_dump_json() for m in state["metrics"])
     prompt = (
         "You are an expert DeFi risk analyst. Given these metric JSON blobs, "
-        "respond with JSON ONLY containing keys 'risk_score' (number 0‑100) "
-        "and 'justification' (string). Strict JSON, no extra keys. \n\n" + metrics_blob
+        "respond with JSON ONLY containing keys 'risk_score' (number 0-100) "
+        "and 'justification' (string). Strict JSON, no extra keys.\n\n" + metrics_blob
     )
-    raw_msg: AIMessage = ChatOpenAI(model="gpt-4o", temperature=0).invoke([SystemMessage(prompt)])  # type: ignore
+    raw_msg: AIMessage = ChatOpenAI(model="gpt-4o", temperature=0).invoke(
+        [SystemMessage(prompt)]
+    )  # type: ignore
+
     raw = raw_msg.content.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+
     try:
-        parsed = json.loads(raw)
-        validated = RiskSummaryOutput(**parsed)  # raises if invalid
-        final_content = validated.model_dump_json()
-        print("[LOG] Final validated summary:", final_content)
-    except Exception as exc:  # pylint: disable=broad-except
-        final_content = json.dumps({
-            "error": f"Failed to parse/validate summary: {exc}",
-            "raw": raw,
-        })
-        print("[LOG] !!! summary validation error", exc)
+        validated = RiskSummaryOutput(**json.loads(raw))
+        final_json = validated.model_dump_json()
+        logger.info("Validated summary: %s", final_json)
+    except Exception as exc:  # demo: broad catch
+        final_json = json.dumps({"error": f"Failed to validate: {exc}", "raw": raw})
+        logger.warning("Validation failed: %s", exc)
 
-    return {"messages": [AIMessage(content=final_content)]}
+    return {"messages": [AIMessage(content=final_json)]}
 
-# ===========================================================================
-# 6.  Build graph
-# ===========================================================================
+# ───────────────────────────── 7. Build graph ─────────────────────────────
 
-wf = StateGraph(AgentState)
-wf.add_node("agent", node_llm)
-wf.add_node("action", node_tools)
-wf.add_node("summarize", node_summarize)
-wf.set_entry_point("agent")
-wf.add_conditional_edges("agent", decide_next, {
-    "continue": "action",
-    "summarize": "summarize",
-    "end": END,
-})
-wf.add_edge("action", "agent")
-app = wf.compile()
+graph = StateGraph(AgentState)
+graph.add_node("agent", node_llm)
+graph.add_node("action", node_tools)
+graph.add_node("summarize", node_summarize)
 
-# ===========================================================================
-# 7. Script entry
-# ===========================================================================
+graph.set_entry_point("agent")
+graph.add_conditional_edges(
+    "agent", decide_next,
+    {"continue": "action", "summarize": "summarize", "end": END},
+)
+graph.add_edge("action", "agent")
+app = graph.compile()
+
+# ───────────────────────────── 8. CLI entry ──────────────────────────────
 
 if __name__ == "__main__":
     init = {
@@ -315,12 +283,10 @@ if __name__ == "__main__":
         "input_request": "Compute exotic exposure and HHI",
         "messages": [],
         "metrics": [],
+        "logs": [],
     }
-
-    final_state = None
     for final_state in app.stream(init, stream_mode="values"):
         pass
 
-    if final_state:
-        print("\n=== FINAL RISK SUMMARY ===")
-        print(final_state["messages"][-1].content)
+    print("\n=== FINAL RISK SUMMARY ===")
+    print(final_state["messages"][-1].content)
