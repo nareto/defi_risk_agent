@@ -25,16 +25,17 @@ def get_hhi(wallet: str, normalize: bool = False) -> float:
     return float(hhi / 10_000) if normalize else float(hhi)
 
 
-def get_exotic_exposure(wallet: str) -> float:
-    """
-    Exotic exposure risk, based on portfolio allocation to low cap or short-lived tokens
-    """
-    portfolio = get_portfolio(wallet)
-    exposure = 0
-    for token_portfolio in portfolio:
-        token_address = token_portfolio['token_address']
-        token_info = get_token_or_coin_info(token_address)
-        exposure += token_portfolio['portfolio_percentage_usd']*token_info['market_cap_rank']/token_info['lifetime_seconds']
-    return exposure
-    
+   
+
+def get_exotic_exposure(wallet:str, topn_tokens = 200, top_new_days = 90):
+    portfolio  = get_portfolio(wallet)
+    total_usd  = sum(p["usd_value"] for p in portfolio)
+    exotic_usd = 0
+    for p in portfolio:
+        info = get_token_or_coin_info(p["token_address"])
+        if (info['market_cap_rank'] > topn_tokens) or (info['lifetime_seconds'] < top_new_days*24*60*60):
+            exotic_usd += p["usd_value"]
+
+    return exotic_usd / total_usd if total_usd else 0.0
+
 

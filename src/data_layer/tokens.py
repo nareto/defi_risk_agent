@@ -3,6 +3,7 @@ from src.providers.coingecko import (
     get_coin_marketcap_and_rank,
 )
 from src.providers.ethplorer import get_token_market_cap_and_creation_date
+from src.providers.dexscreener import get_token_info
 import datetime as dt
 
 def get_token_or_coin_info(address, network ='ethereum'):
@@ -12,6 +13,12 @@ def get_token_or_coin_info(address, network ='ethereum'):
         return get_token_info(address)
 
 def get_token_info(address):
+    token_info_providers = {
+        'coingecko': get_token_marketcap_and_rank,
+        'ethplorer': get_token_market_cap_and_creation_date,
+        'dexscreener': get_token_info
+    }
+
     cg_token_data = get_token_marketcap_and_rank(address)
     ep_token_data = get_token_market_cap_and_creation_date(address)
     lifetime = (
