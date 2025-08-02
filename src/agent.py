@@ -23,7 +23,7 @@ class StopNowMessage(BaseMessage):
     type: str = "stop_now"
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 from src.utils import get_prompts_dir
 
@@ -98,16 +98,20 @@ METRIC_NAMES = [m.model_fields["metric_name"].default for m in METRIC_OUTPUTS]
 
 tool_executor = ToolExecutor(TOOLS)
 
-class AgentState(TypedDict):
+class AgentState(BaseModel):
     input_address: str
     input_request: str
-    messages: Annotated[List[BaseMessage], operator.add]
-    metrics: Annotated[List[BaseModel], operator.add]
-    logs: Annotated[List[str], operator.add]
-    turn_count: Annotated[int, operator.add]
+    messages: List[BaseMessage] = Field(default_factory=list)
+    metrics: List[BaseModel] = Field(default_factory=list)
+    logs: List[str] = Field(default_factory=list)
+    turn_count: int = 0
     max_turns: int
     max_messages: int
-    llm_with_tools: Any # Holds the LLM with tools
+    llm_with_tools: Any = None  # Will be populated by the setup_llm node
+
+    class Config:
+        # Allow non-serializable types like the LLM object
+        arbitrary_types_allowed = True
 
 
 def node_llm(state: AgentState) -> Dict[str, Any]:
@@ -116,17 +120,17 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
     with open(get_prompts_dir() + "/convo.md") as f:
         convo_template = f.read()
     convo_prompt = convo_template.format(
-        input_request=state["input_request"],
-        input_address=state["input_address"],
+        input_request=state.input_request,
+        input_address=state.input_address,
     )
     
     # Keep only the last max_messages, ensuring we don't split tool calls from their results
     messages_to_keep = []
     # Start from the end of the messages
-    for msg in reversed(state["messages"]):
+    for msg in reversed(state.messages):
         messages_to_keep.insert(0, msg)
         # If we have enough messages and the last one is not a tool message, we can stop
-        if len(messages_to_keep) >= state["max_messages"] and not isinstance(msg, ToolMessage):
+        if len(messages_to_keep) >= state.max_messages and not isinstance(msg, ToolMessage):
             # However, we need to make sure the AI message that preceded it is included
             if isinstance(msg, AIMessage) and msg.tool_calls:
                 pass # This is the start of a tool sequence, keep it
@@ -135,7 +139,7 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
     
     messages = messages_to_keep
 
-    if not state["messages"]:
+    if not state.messages:
         convo = [
             SystemMessage(system_prompt),
             HumanMessage(content=convo_prompt),
@@ -144,20 +148,24 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
         convo = [SystemMessage(system_prompt)] + messages
 
     logger.info(
-        f"Turn {state['turn_count']}/{state['max_turns']}: Sending {len(convo)} messages to LLM",
+        f"Turn {state.turn_count}/{state.max_turns}: Sending {len(convo)} messages to LLM",
     )
     # The [m.content[:80] for m in convo] part is for brevity in logs
     logger.debug("LLM→ messages: %s", [m.content[:80] for m in convo])
-    ai_msg: AIMessage = state["llm_with_tools"].invoke(convo)  # type: ignore
+    ai_msg: AIMessage = state.llm_with_tools.invoke(convo)  # type: ignore
     logger.info("LLM← tool_calls: %s", ai_msg.tool_calls)
-    return {"messages": [ai_msg], "logs": ["AI decided tool calls"], "turn_count": 1}
+    return {
+        "messages": state.messages + [ai_msg], 
+        "logs": state.logs + ["AI decided tool calls"], 
+        "turn_count": state.turn_count + 1,
+    }
 
 
 def node_tools(state: AgentState) -> Dict[str, Any]:
-    ai_msg: AIMessage = state["messages"][-1]
-    out: List[BaseMessage] = []
+    ai_msg: AIMessage = state.messages[-1]
+    out_messages: List[BaseMessage] = []
     new_metrics: List[BaseModel] = []
-    logs: List[str] = []
+    new_logs: List[str] = []
 
     for tc in ai_msg.tool_calls:
         name, call_id = tc["name"], tc["id"]
@@ -166,9 +174,9 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
         try:
             result = tool_executor.invoke({"name": name, "arguments": args})
             logger.info("→ %s", pformat(result))
-            logs.append(f"{name} ok")
+            new_logs.append(f"{name} ok")
             if isinstance(result, StopNow):
-                out.append(StopNowMessage(content=""))
+                out_messages.append(StopNowMessage(content=""))
                 # Stop processing further tools in this turn
                 break
             is_metric = False
@@ -178,35 +186,36 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
                     break
             if is_metric:
                 new_metrics.append(result)
-                out.append(
+                out_messages.append(
                     ToolMessage(content=result.model_dump_json(), tool_call_id=call_id)
                 )
             else:
-                out.append(
+                out_messages.append(
                     ToolMessage(content=json.dumps(result), tool_call_id=call_id)
                 )
         except Exception as exc:
             logger.warning("%s error: %s", name, exc)
-            logs.append(f"{name} error {exc}")
-            out.append(ToolMessage(content=f"Tool error: {exc}", tool_call_id=call_id))
+            new_logs.append(f"{name} error {exc}")
+            out_messages.append(ToolMessage(content=f"Tool error: {exc}", tool_call_id=call_id))
 
-    payload: Dict[str, Any] = {"messages": out, "logs": logs}
-    if new_metrics:
-        payload["metrics"] = new_metrics
-    return payload
+    return {
+        "messages": state.messages + out_messages, 
+        "logs": state.logs + new_logs,
+        "metrics": state.metrics + new_metrics,
+    }
 
 
 def decide_next(state: AgentState) -> str:
-    if state["turn_count"] > state["max_turns"]:
+    if state.turn_count > state.max_turns:
         logger.info("Max turns reached, summarizing.")
         return "summarize"
     
-    last_message = state["messages"][-1]
+    last_message = state.messages[-1]
     if isinstance(last_message, StopNowMessage):
         logger.info("StopNow signal received, ending.")
         return "end"
         
-    produced = {m.metric_name for m in state["metrics"]}
+    produced = {m.metric_name for m in state.metrics}
     if produced.issuperset(METRIC_NAMES):
         logger.info("All metrics produced, summarizing.")
         return "summarize"
@@ -224,13 +233,13 @@ class RiskSummaryOutput(BaseModel):
 
 
 def node_summarize(state: AgentState) -> Dict[str, Any]:
-    metrics_blob = "\n".join(m.model_dump_json() for m in state["metrics"])
+    metrics_blob = "\n".join(m.model_dump_json() for m in state.metrics)
     with open(get_prompts_dir() + "/risk.md") as f:
         template_prompt = f.read()
     prompt = template_prompt.format(metrics_blob=metrics_blob)
     
     # Use the same model as the main agent
-    llm = state["llm_with_tools"]
+    llm = state.llm_with_tools
     raw_msg: AIMessage = llm.invoke(
         [SystemMessage(prompt)]
     )  # type: ignore
@@ -247,7 +256,7 @@ def node_summarize(state: AgentState) -> Dict[str, Any]:
         final_json = json.dumps({"error": f"Failed to validate: {exc}", "raw": raw})
         logger.warning("Validation failed: %s", exc)
 
-    return {"messages": [AIMessage(content=final_json)]}
+    return {"messages": state.messages + [AIMessage(content=final_json)]}
 
 
 def build_graph(model: str, temperature: float):
@@ -257,9 +266,8 @@ def build_graph(model: str, temperature: float):
     graph = StateGraph(AgentState)
     
     # This node will be the entry point, ensuring the LLM is always in the state
-    def setup_llm(state):
-        state["llm_with_tools"] = llm_with_tools
-        return state
+    def setup_llm(state: AgentState) -> Dict[str, Any]:
+        return {"llm_with_tools": llm_with_tools}
 
     graph.add_node("setup", setup_llm)
     graph.add_node("agent", node_llm)
