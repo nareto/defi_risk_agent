@@ -10,6 +10,30 @@ def main():
     parser = argparse.ArgumentParser(description="DeFi Risk Agent CLI")
     parser.add_argument("address", help="The wallet address to analyze.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output.")
+    parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=10,
+        help="The maximum number of turns before forcing a summary.",
+    )
+    parser.add_argument(
+        "--max-messages",
+        type=int,
+        default=5,
+        help="Maximum number of messages to keep in history.",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="gpt-4o",
+        help="The OpenAI model to use.",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.0,
+        help="The temperature for the OpenAI model.",
+    )
     args = parser.parse_args()
 
     # Set logger level based on verbosity
@@ -24,11 +48,16 @@ def main():
         "messages": [],
         "metrics": [],
         "logs": [],
+        "turn_count": 0,
+        "max_turns": args.max_turns,
+        "max_messages": args.max_messages,
     }
-    app = build_graph()
+    app = build_graph(model=args.model, temperature=args.temperature)
 
     final_state = None
     for state in app.stream(init, stream_mode="values"):
+        if args.verbose and state["logs"]:
+            print("\n".join(state["logs"][-5:]))
         if args.verbose:
             print("\n" + "─" * 80)
             if state.get("messages"):

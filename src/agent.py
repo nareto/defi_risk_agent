@@ -17,6 +17,10 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langchain_core.tools import BaseTool
+
+class StopNowMessage(BaseMessage):
+    """A message to signal that the agent should stop."""
+    type: str = "stop_now"
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
@@ -93,9 +97,6 @@ METRIC_OUTPUTS = [
 METRIC_NAMES = [m.model_fields["metric_name"].default for m in METRIC_OUTPUTS]
 
 tool_executor = ToolExecutor(TOOLS)
-llm_core = ChatOpenAI(model="gpt-4o", temperature=0, streaming=False)
-llm_with_tools = llm_core.bind_tools(TOOLS)
-
 
 class AgentState(TypedDict):
     input_address: str
@@ -103,6 +104,10 @@ class AgentState(TypedDict):
     messages: Annotated[List[BaseMessage], operator.add]
     metrics: Annotated[List[BaseModel], operator.add]
     logs: Annotated[List[str], operator.add]
+    turn_count: Annotated[int, operator.add]
+    max_turns: int
+    max_messages: int
+    llm_with_tools: Any # Holds the LLM with tools
 
 
 def node_llm(state: AgentState) -> Dict[str, Any]:
@@ -114,18 +119,22 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
         input_request=state["input_request"],
         input_address=state["input_address"],
     )
+    
+    # Keep only the last max_messages
+    messages = state["messages"][-state["max_messages"]:]
+
     if not state["messages"]:
         convo = [
             SystemMessage(system_prompt),
             HumanMessage(content=convo_prompt),
         ]
     else:
-        convo = [SystemMessage(system_prompt)] + state["messages"]
+        convo = [SystemMessage(system_prompt)] + messages
 
     logger.info("LLM→ messages: %s", [m.content[:80] for m in convo])
-    ai_msg: AIMessage = llm_with_tools.invoke(convo)  # type: ignore
+    ai_msg: AIMessage = state["llm_with_tools"].invoke(convo)  # type: ignore
     logger.info("LLM← tool_calls: %s", ai_msg.tool_calls)
-    return {"messages": [ai_msg], "logs": ["AI decided tool calls"]}
+    return {"messages": [ai_msg], "logs": ["AI decided tool calls"], "turn_count": 1}
 
 
 def node_tools(state: AgentState) -> Dict[str, Any]:
@@ -143,7 +152,9 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
             logger.info("→ %s", pformat(result))
             logs.append(f"{name} ok")
             if isinstance(result, StopNow):
-                return {"messages": [result]}
+                out.append(StopNowMessage(content=""))
+                # Stop processing further tools in this turn
+                break
             is_metric = False
             for mo in METRIC_OUTPUTS:
                 if isinstance(result, mo):
@@ -170,12 +181,24 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
 
 
 def decide_next(state: AgentState) -> str:
-    produced = {m.metric_name for m in state["metrics"]}
-    last_ai = state["messages"][-1]
-    if produced.issuperset(METRIC_NAMES):
+    if state["turn_count"] > state["max_turns"]:
+        logger.info("Max turns reached, summarizing.")
         return "summarize"
-    if isinstance(last_ai, AIMessage) and last_ai.tool_calls:
+    
+    last_message = state["messages"][-1]
+    if isinstance(last_message, StopNowMessage):
+        logger.info("StopNow signal received, ending.")
+        return "end"
+        
+    produced = {m.metric_name for m in state["metrics"]}
+    if produced.issuperset(METRIC_NAMES):
+        logger.info("All metrics produced, summarizing.")
+        return "summarize"
+    
+    if isinstance(last_message, AIMessage) and last_message.tool_calls:
         return "continue"
+        
+    logger.info("No more tool calls, ending.")
     return "end"
 
 
@@ -186,10 +209,13 @@ class RiskSummaryOutput(BaseModel):
 
 def node_summarize(state: AgentState) -> Dict[str, Any]:
     metrics_blob = "\n".join(m.model_dump_json() for m in state["metrics"])
-    with open("../prompts/risk.md") as f:
+    with open(get_prompts_dir() + "/risk.md") as f:
         template_prompt = f.read()
-    prompt = template_prompt.format(metrics_blog=metrics_blob)
-    raw_msg: AIMessage = ChatOpenAI(model="gpt-4o", temperature=0).invoke(
+    prompt = template_prompt.format(metrics_blob=metrics_blob)
+    
+    # Use the same model as the main agent
+    llm = state["llm_with_tools"]
+    raw_msg: AIMessage = llm.invoke(
         [SystemMessage(prompt)]
     )  # type: ignore
 
@@ -208,9 +234,18 @@ def node_summarize(state: AgentState) -> Dict[str, Any]:
     return {"messages": [AIMessage(content=final_json)]}
 
 
-def build_graph():
+def build_graph(model: str, temperature: float):
+    llm_core = ChatOpenAI(model=model, temperature=temperature, streaming=False)
+    llm_with_tools = llm_core.bind_tools(TOOLS)
+    
     graph = StateGraph(AgentState)
-    graph.add_node("agent", node_llm)
+    
+    # We need to pass the configured LLM into the state
+    def add_llm_to_state(state):
+        state["llm_with_tools"] = llm_with_tools
+        return state
+        
+    graph.add_node("agent", add_llm_to_state | node_llm)
     graph.add_node("action", node_tools)
     graph.add_node("summarize", node_summarize)
 
