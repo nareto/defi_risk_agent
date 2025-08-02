@@ -120,8 +120,20 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
         input_address=state["input_address"],
     )
     
-    # Keep only the last max_messages
-    messages = state["messages"][-state["max_messages"]:]
+    # Keep only the last max_messages, ensuring we don't split tool calls from their results
+    messages_to_keep = []
+    # Start from the end of the messages
+    for msg in reversed(state["messages"]):
+        messages_to_keep.insert(0, msg)
+        # If we have enough messages and the last one is not a tool message, we can stop
+        if len(messages_to_keep) >= state["max_messages"] and not isinstance(msg, ToolMessage):
+            # However, we need to make sure the AI message that preceded it is included
+            if isinstance(msg, AIMessage) and msg.tool_calls:
+                pass # This is the start of a tool sequence, keep it
+            else:
+                break
+    
+    messages = messages_to_keep
 
     if not state["messages"]:
         convo = [
@@ -240,16 +252,19 @@ def build_graph(model: str, temperature: float):
     
     graph = StateGraph(AgentState)
     
-    # We need to pass the configured LLM into the state
-    def add_llm_to_state(state):
+    # This node will be the entry point, ensuring the LLM is always in the state
+    def setup_llm(state):
         state["llm_with_tools"] = llm_with_tools
         return state
-        
-    graph.add_node("agent", add_llm_to_state | node_llm)
+
+    graph.add_node("setup", setup_llm)
+    graph.add_node("agent", node_llm)
     graph.add_node("action", node_tools)
     graph.add_node("summarize", node_summarize)
 
-    graph.set_entry_point("agent")
+    graph.set_entry_point("setup")
+    graph.add_edge("setup", "agent")
+    
     graph.add_conditional_edges(
         "agent",
         decide_next,
