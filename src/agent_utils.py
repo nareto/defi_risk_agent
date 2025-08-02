@@ -2,6 +2,7 @@ from langchain_core.tools import tool
 import time
 import datetime as dt
 from pydantic import BaseModel
+from typing import Annotated  
 
 class StopNow(BaseModel):
     pass

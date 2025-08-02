@@ -1,6 +1,7 @@
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 from typing import List
+from typing import Annotated  
 
 class ExoticAsset(BaseModel):
     symbol: str

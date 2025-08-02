@@ -4,10 +4,12 @@ import decimal
 import requests
 from langchain_core.tools import tool
 from src.utils import rate_limit
+from typing import Annotated 
 
 
-@rate_limit(max_calls=2, period_seconds=10)
+
 @tool
+@rate_limit(max_calls=2, period_seconds=10)
 def api_coingecko_contract(address: str, chain: str = "ethereum"):
     """Fetch data on contract https://docs.coingecko.com/reference/coins-contract-address. Example response (curated):
     {
@@ -132,8 +134,8 @@ def api_coingecko_contract(address: str, chain: str = "ethereum"):
     # }
 
 
-@rate_limit(max_calls=2, period_seconds=10)
 @tool
+@rate_limit(max_calls=2, period_seconds=10)
 def api_coingecko_coin_data(coin_id):
     """Fetch data for coin https://docs.coingecko.com/reference/coins-id. Example response (curated):
         {

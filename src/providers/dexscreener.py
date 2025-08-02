@@ -1,9 +1,10 @@
 import requests
 from langchain_core.tools import tool
 from src.utils import rate_limit
+from typing import Annotated   
 
-@rate_limit(max_calls=2, period_seconds=10)
 @tool
+@rate_limit(max_calls=2, period_seconds=10)
 def api_dexscreener_token_data(network: str, token_addresses: str):
     """
     Fetches token information from DexScreener API.

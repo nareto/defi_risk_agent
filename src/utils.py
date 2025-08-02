@@ -1,6 +1,7 @@
 import functools
 from collections import deque, defaultdict
 import time
+from typing import Annotated
 
 def get_prompts_dir():
     return "src/prompts/"
@@ -37,5 +38,7 @@ def rate_limit(max_calls: int, period_seconds: int):
             # Record the new call timestamp and execute the function.
             API_CALL_TIMESTAMPS_BY_FUNC[func].append(time.time())
             return func(*args, **kwargs)
+        from typing import Annotated as _A
+        wrapper.__globals__.setdefault('Annotated', _A)
         return wrapper
     return decorator

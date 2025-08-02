@@ -2,9 +2,10 @@
 import requests
 from langchain_core.tools import tool
 from src.utils import rate_limit
+from typing import Annotated  
 
-@rate_limit(max_calls=2, period_seconds=10)
 @tool
+@rate_limit(max_calls=2, period_seconds=10)
 def api_goplus_token_security(address: str, chain_id: int = 1):
     """
     Fetches token security data from GoPlus API.
