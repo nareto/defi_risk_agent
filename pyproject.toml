@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "defi-risk-agent"
+version = "0.1.0"
+description = ""
+authors = ["renato <bnh@terra>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.13"
+pydantic = "^2.11.7"
+pydantic-settings = "^2.10.1"
+python-dotenv = "^1.1.1"
+requests = "^2.32.4"
+dataclass-wizard = "^0.35.1"
+
+
+[tool.poetry.group.dev.dependencies]
+black = "^25.1.0"
+ipykernel = "^6.30.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
