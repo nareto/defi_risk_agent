@@ -127,7 +127,7 @@ class AgentState(BaseModel):
 
 
 def node_llm(state: AgentState) -> Dict[str, Any]:
-    logger.info(f"─── Turn start: {state.turn_count/{state.max_turns} " + "─" * 60)
+    logger.info(f"─── Turn start: {state.turn_count}/{state.max_turns} " + "─" * 60)
     with open(get_prompts_dir() + "/system.md") as f:
         system_prompt = f.read()
     with open(get_prompts_dir() + "/input.md") as f:
@@ -288,7 +288,8 @@ def decide_next(state: AgentState) -> str:
         if isinstance(m, dict):
             return m.get("metric_name")
         return getattr(m, "metric_name", None)
-    produced_metrics = { _metric_name(m) for m in state.metrics if _metric_name(m) }
+
+    produced_metrics = {_metric_name(m) for m in state.metrics if _metric_name(m)}
     if produced_metrics.issuperset(METRIC_NAMES):
         logger.info("All metrics produced, finalizing.")
         return "finalize"
@@ -299,12 +300,9 @@ def decide_next(state: AgentState) -> str:
     logger.info("No more tool calls, finalizing.")
     return "finalize"
 
-
-class MetricsCollection(BaseModel):
-    data: List[BaseModel]
-
-
 class RiskFinalOutput(BaseModel):
+    """Container for the final risk assessment"""
+
     risk_score: float = Field(
         ge=0,
         le=100,
@@ -313,29 +311,35 @@ class RiskFinalOutput(BaseModel):
     justification: str = Field(
         description="A justification in English for the score given"
     )
-    metrics: MetricsCollection = Field(
-        description="The JSON data received in input, copied here verbatim"
-    )
+
+
+class RiskFinalOutputWithMetrics(RiskFinalOutput):
+    metrics: List[Dict]
 
 
 def node_finalize(state: AgentState) -> Dict[str, Any]:
-    # state.metrics is already a list[dict]; no additional validation needed for prompt
     metrics_blob = json.dumps({"data": state.metrics}, indent=2)
 
     template_prompt = Template(open(get_prompts_dir() + "/risk.md").read())
     prompt = template_prompt.substitute(metrics_blob=metrics_blob)
 
-    logger.info(f"DONE. PROMPT:\n{prompt}")
+    logger.info(f"Finalizing, last prompt:\n{prompt}")
 
     client = instructor.from_provider(f"openai/{state.model_name}")
     output: RiskFinalOutput = client.chat.completions.create(
         response_model=RiskFinalOutput,
         messages=[{"role": "user", "content": prompt}],
     )
-    logger.info(f"DONE. output:\n{output.model_dump_json(indent=2)}")
 
-
-    return {"messages": state.messages + [AIMessage(content=output.model_dump_json(indent=2))]}
+    final_output = RiskFinalOutputWithMetrics(
+        risk_score=output.risk_score,
+        justification=output.justification,
+        metrics=state.metrics,
+    )
+    return {
+        "messages": state.messages
+        + [AIMessage(content=final_output.model_dump_json(indent=2))]
+    }
 
 
 def build_graph(model: str, temperature: float, checkpointer):

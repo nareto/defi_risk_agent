@@ -157,9 +157,12 @@ def main(
                         logger.debug(f"🛠️ Tools -> AI: {str(msg.content)[:500]} ...")
 
                 if snapshot.metrics:
-                    logger.debug(
-                        f"📊 Metrics: {snapshot.metrics[-1].__class__.__name__}"
-                    )
+                    last_metric = snapshot.metrics[-1]
+                    # if isinstance(last_metric, dict):
+                    metric_repr = last_metric.get("metric_name", str(last_metric)[:120])
+                    # else:
+                    #     metric_repr = last_metric.__class__.__name__
+                    logger.debug(f"📊 Metrics: {metric_repr}")
                 final_state = snapshot
                 status.update(
                     f"[bold green]Turn {snapshot.turn_count}: Processing...[/bold green]"

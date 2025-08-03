@@ -4,6 +4,9 @@ run address:
 runv address:
     poetry run python -m src.cli -v {{ address }}
 
+runl address:
+    poetry run python -m src.cli -v {{ address }} > runs_output/{{ address }}.$(date -u +"%Y-%m-%dT%H-%M-%SZ").log 2>&1
+
 resume threadturn:
     poetry run python -m src.cli --resume-from {{ threadturn }}
 

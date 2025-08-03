@@ -2,7 +2,9 @@
 This is a PoC AI agent that takes an Ethereum wallet in input and, by looking at what DeFi activity they are involved with, produces a 0-100 score representing the tolerance for risk of the investor. 
 
 # Features
-- 
+- modular architecture, easy to expand (see [Architecture](#architecture))
+- structured final output, in fixed schema (thanks to [instructor](https://github.com/567-labs/instructor))
+- rate limiting configurable per each individual api call
 - resume from a previous run from a specific turn with `just resume threadid:turn`
 - hard stop at `--max-turns` LLM invocations (default: 10)
 - pass only the last `--max-messages` to each LLM invocation (default: 7)
@@ -30,3 +32,5 @@ or
 `./batch_run.sh`
 
 # Architecture
+
+see [defi_risk_metrics.md](defi_risk_metrics.md)

@@ -8,10 +8,10 @@ echo "Created output directory: $OUTPUT_DIR"
 
 # 2. Define the list of addresses to process
 ADDRESSES=(
-    "0x7a29aE65Bf25Dfb6e554BF0468a6c23ed99a8DC2"
+    "0x51db92258a3ab0f81de0feab5d59a77e49b57275"
     "0x3feC8fd95b122887551c19c73F6b2bbf445B8C87"
     "0x38e247893BbC8517a317c54Ed34F9C62cb5F26c0"
-    "0x51db92258a3ab0f81de0feab5d59a77e49b57275"
+    "0x7a29aE65Bf25Dfb6e554BF0468a6c23ed99a8DC2"
 )
 
 # 3. Loop through each address, run the command, and redirect output
