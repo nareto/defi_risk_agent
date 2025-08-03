@@ -1,9 +1,8 @@
 import inspect
 import json
 import logging
-import operator
 from pprint import pformat
-from typing import Annotated, Any, Callable, Dict, List, Set, TypedDict
+from typing import Any, Callable, Dict, List
 
 from dotenv import load_dotenv
 
@@ -15,12 +14,16 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
     ToolMessage,
+    ToolCall,
 )
 from langchain_core.tools import BaseTool
+from pydantic import Field
 
-class StopNowMessage(BaseMessage):
+class StopNowMessage(AIMessage):
     """A message to signal that the agent should stop."""
-    type: str = "stop_now"
+    msg: str = "stop_now"
+
+
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field, PrivateAttr
@@ -28,7 +31,6 @@ from pydantic import BaseModel, Field, PrivateAttr
 from src.utils import get_prompts_dir
 
 logger = logging.getLogger("defi_agent")
-logger.addHandler(logging.StreamHandler())
 
 # ───────────── 1. portable ToolExecutor import (with shim) ────────────────
 

@@ -1,6 +1,9 @@
 run address:
     poetry run python -m src.cli {{ address }}
 
+resume statefile:
+    poetry run python -m src.cli --resume-from {{ statefile }}
+
 debug address:
     poetry run python -m ipdb -c continue -m src.cli -v {{ address }}
 
