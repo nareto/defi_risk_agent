@@ -40,5 +40,15 @@ def configure_logging(fmt: str = "human", *, level: int = logging.INFO) -> None:
             show_time=False,
         )
     root.addHandler(handler)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("defi_agent").propagate = False
+    # Quiet down noisy third-party libraries so that our own DEBUG output is
+    # readable even when the root logger is set to DEBUG via --verbose.
+    for noisy_logger in (
+        "httpx",  # HTTP client used by OpenAI/other providers
+        "httpcore",  # lower-level transport layer used by httpx
+        "openai",  # OpenAI Python SDK
+        "openai._base_client",  # OpenAI internal client traces
+    ):
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+    # Ensure our own library logger bubbles up to the root handler so its INFO
+    # and DEBUG lines are actually emitted.
+    logging.getLogger("defi_agent").propagate = True
