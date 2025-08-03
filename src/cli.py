@@ -67,6 +67,8 @@ def main(
     with SqliteSaver.from_conn_string("sqlite:runs.db") as checkpointer:
         thread_id: str
         checkpoint_id = None
+        address_from_cp: str | None = None  # wallet recovered from checkpoint (resume mode)
+
         if resume_from:
             parts = resume_from.split(":")
             if len(parts) > 2:
@@ -75,31 +77,36 @@ def main(
                 )
 
             thread_id = parts[0]
+            thread_config = RunnableConfig(configurable={"thread_id": thread_id})
+            cps = list(checkpointer.list(thread_config))  # newest → oldest (turn_n high→low)
+            if not cps:
+                raise click.UsageError("No checkpoints found for that thread id.")
+
             if len(parts) == 2:
                 try:
                     wanted_turn = int(parts[1])
                 except ValueError:
                     raise click.UsageError("Turn number must be an integer.")
 
-                thread_config = RunnableConfig(configurable={"thread_id": thread_id})
-                cps = list(checkpointer.list(thread_config))  # newest → oldest
                 try:
                     cp = next(
                         cp
                         for cp in cps
-                        if cp.checkpoint["channel_values"].get("turn_count")
-                        == wanted_turn
+                        if cp.checkpoint["channel_values"].get("turn_count") == wanted_turn
                     )
                 except StopIteration:
                     raise click.UsageError(
                         f"Turn {wanted_turn} not found (thread has {len(cps)} checkpoints)."
                     )
+            else:
+                # resume from most recent checkpoint
+                cp = cps[0]
 
-                # Successfully found checkpoint for desired turn
-                checkpoint_id = (
-                    cp.config["configurable"].get("checkpoint_id")  # present in ≥0.2.4
-                    or cp.checkpoint["id"]  # fallback
-                )
+            address_from_cp = cp.checkpoint["channel_values"].get("input_address")
+            checkpoint_id = (
+                cp.config["configurable"].get("checkpoint_id")  # present in ≥0.2.4
+                or cp.checkpoint["id"]  # fallback
+            )
 
             init = None
         else:
@@ -119,11 +126,16 @@ def main(
         config = {"configurable": {"thread_id": thread_id}}
         if checkpoint_id:
             config["configurable"]["checkpoint_id"] = checkpoint_id
+        # If address wasn't passed on CLI (resume mode) fall back to one stored in
+        # the checkpoint so we can still display it to the user.
+        if not address:
+            address = address_from_cp or "?"
+
         cfg = RunnableConfig(**config)
 
         console.print(
             Panel(
-                f"Starting agent with [bold cyan]{model}[/bold cyan] \t Thread: {thread_id}",
+                f"LLM: [bold cyan]{model}[/bold cyan] \t Wallet: [bold green]{address}[/bold green] \t Thread: [bold yellow]{thread_id}[/bold yellow]",
                 title="🚀 Agent Started",
             )
         )

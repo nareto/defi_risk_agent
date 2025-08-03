@@ -259,8 +259,8 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
 
 def decide_next(state: AgentState) -> str:
     if state.turn_count + 1> state.max_turns:
-        logger.info("Max turns reached, summarizing.")
-        return "summarize"
+        logger.info("Max turns reached, finalizing.")
+        return "finalize"
     last_message = state.messages[-1]
     if isinstance(last_message, ToolMessage):
         try:
@@ -273,8 +273,8 @@ def decide_next(state: AgentState) -> str:
 
     produced_metrics = {m.metric_name for m in state.metrics}
     if produced_metrics.issuperset(METRIC_NAMES):
-        logger.info("All metrics produced, summarizing.")
-        return "summarize"
+        logger.info("All metrics produced, finalizing.")
+        return "finalize"
 
     if isinstance(last_message, AIMessage) and last_message.tool_calls:
         return "continue"
@@ -288,7 +288,7 @@ class RiskSummaryOutput(BaseModel):
     justification: str
 
 
-def node_summarize(state: AgentState) -> Dict[str, Any]:
+def node_finalize(state: AgentState) -> Dict[str, Any]:
     metrics_blob = "\n".join(m.model_dump_json() for m in state.metrics)
     with open(get_prompts_dir() + "/risk.md") as f:
         template_prompt = f.read()
@@ -326,7 +326,7 @@ def build_graph(model: str, temperature: float, checkpointer):
     graph.add_node("setup", setup_llm)
     graph.add_node("agent", node_llm)
     graph.add_node("action", node_tools)
-    graph.add_node("summarize", node_summarize)
+    graph.add_node("finalize", node_finalize)
 
     graph.set_entry_point("setup")
     graph.add_edge("setup", "agent")
@@ -334,7 +334,7 @@ def build_graph(model: str, temperature: float, checkpointer):
     graph.add_conditional_edges(
         "agent",
         decide_next,
-        {"continue": "action", "summarize": "summarize", "end": END},
+        {"continue": "action", "finalize": "finalize", "end": END},
     )
     graph.add_edge("action", "agent")
     app = graph.compile(checkpointer=checkpointer)
