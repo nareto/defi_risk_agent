@@ -24,4 +24,3 @@ or
 `./batch_run.sh`
 
 # Architecture
-
