@@ -1,1 +1,0 @@
-{input_request} for wallet {input_address}

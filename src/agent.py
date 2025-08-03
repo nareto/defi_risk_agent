@@ -59,6 +59,9 @@ from src.agent_utils import *
 
 # metrics
 from src.metrics.liquidity import *
+from src.metrics.protocol import *
+from src.metrics.user import *
+from src.metrics.systemic import *
 
 # api calls
 from src.providers.alchemy import *
@@ -80,6 +83,9 @@ TOOLS = [
     api_moralis_wallet_portfolio,
     metric_calculate_exotic_asset_exposure,
     metric_calculate_portfolio_concentration,
+    metric_calculate_low_tvl_protocol_concentration,
+    metric_calculate_portfolio_churn_rate,
+    metric_calculate_bridged_asset_exposure,
     util_stop_now,
     util_wait_five_seconds,
     util_multiply_numbers,
@@ -100,7 +106,6 @@ tool_executor = ToolExecutor(TOOLS)
 
 class AgentState(BaseModel):
     input_address: str
-    input_request: str
     messages: List[BaseMessage] = Field(default_factory=list)
     metrics: List[BaseModel] = Field(default_factory=list)
     logs: List[str] = Field(default_factory=list)
@@ -117,10 +122,9 @@ class AgentState(BaseModel):
 def node_llm(state: AgentState) -> Dict[str, Any]:
     with open(get_prompts_dir() + "/system.md") as f:
         system_prompt = f.read()
-    with open(get_prompts_dir() + "/convo.md") as f:
+    with open(get_prompts_dir() + "/input.md") as f:
         convo_template = f.read()
-    convo_prompt = convo_template.format(
-        input_request=state.input_request,
+    input_prompt = convo_template.format(
         input_address=state.input_address,
     )
     
@@ -142,7 +146,7 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
     if not state.messages:
         convo = [
             SystemMessage(system_prompt),
-            HumanMessage(content=convo_prompt),
+            HumanMessage(content=input_prompt),
         ]
     else:
         convo = [SystemMessage(system_prompt)] + messages
@@ -152,7 +156,7 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
     )
     # The [m.content[:80] for m in convo] part is for brevity in logs
     logger.debug("LLM→ messages: %s", [m.content[:80] for m in convo])
-    ai_msg: AIMessage = state.llm_with_tools.invoke(convo)  # type: ignore
+    ai_msg: AIMessage = state.llm_with_tools.invoke(convo) 
     logger.info("LLM← tool_calls: %s", ai_msg.tool_calls)
     return {
         "messages": state.messages + [ai_msg], 
@@ -196,7 +200,7 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
         except Exception as exc:
             logger.warning("%s error: %s", name, exc)
             new_logs.append(f"{name} error {exc}")
-            out_messages.append(ToolMessage(content=f"Tool error: {exc}", tool_call_id=call_id))
+            out_messages.append(ToolMessage(content=f"Tool failed with error: {exc}", tool_call_id=call_id))
 
     return {
         "messages": state.messages + out_messages, 
@@ -209,14 +213,13 @@ def decide_next(state: AgentState) -> str:
     if state.turn_count > state.max_turns:
         logger.info("Max turns reached, summarizing.")
         return "summarize"
-    
     last_message = state.messages[-1]
+
     if isinstance(last_message, StopNowMessage):
         logger.info("StopNow signal received, ending.")
         return "end"
-        
-    produced = {m.metric_name for m in state.metrics}
-    if produced.issuperset(METRIC_NAMES):
+    produced_metrics = {m.metric_name for m in state.metrics}
+    if produced_metrics.issuperset(METRIC_NAMES):
         logger.info("All metrics produced, summarizing.")
         return "summarize"
     

@@ -2,6 +2,7 @@ import argparse
 import logging
 import json
 from src.agent import build_graph
+from src.agent import AgentState
 
 # Configure logging
 logger = logging.getLogger("defi_agent")
@@ -42,18 +43,14 @@ def main():
     else:
         logger.setLevel(logging.CRITICAL) # Effectively silence logger
 
-    init = {
-        "input_address": args.address,
-        "input_request": "Compute exotic exposure and HHI",
-        "messages": [],
-        "metrics": [],
-        "logs": [],
-        "turn_count": 0,
-        "max_turns": args.max_turns,
-        "max_messages": args.max_messages,
-    }
+    init = AgentState(
+        input_address=args.address,
+        turn_count=0,
+        max_turns=args.max_turns,
+        max_messages=args.max_messages
+    )
     app = build_graph(model=args.model, temperature=args.temperature)
-
+    print(f"Starting agent with model: {args.model}")
     final_state = None
     for state in app.stream(init, stream_mode="values"):
         if args.verbose and state["logs"]:

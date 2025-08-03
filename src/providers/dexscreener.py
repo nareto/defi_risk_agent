@@ -5,13 +5,13 @@ from typing import Annotated
 
 @tool
 @rate_limit(max_calls=2, period_seconds=10)
-def api_dexscreener_token_data(network: str, token_addresses: str):
+def api_dexscreener_token_data(token_addresses: str, network: str = 'ethereum'):
     """
     Fetches token information from DexScreener API.
     `network`: e.g., 'ethereum', 'bsc'
     `token_addresses`: comma-separated token addresses
     """
-    url = f"https://api.dexscreener.com/v1/latest/tokens/{token_addresses}"
+    url = f"https://api.dexscreener.com/tokens/v1/{network}/{token_addresses}"
     
     response = requests.get(url, headers={"Accept": "*/*"}, timeout=15)
     response.raise_for_status()
