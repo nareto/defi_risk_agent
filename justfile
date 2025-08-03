@@ -42,13 +42,23 @@ backend:
         poetry run uvicorn src.server:app --reload
 
 tbackend address:
-    #!/bin/bash
-    # Start a job
-    curl -X POST http://localhost:8000/run -H "Content-Type: application/json" \
-        -d '{"address":"{{ address }}", "model":"gpt-4o"}'
+    #!/usr/bin/env bash
+    set -euo pipefail
 
-    # Stream progress
-    curl http://localhost:8000/events/<TASK_ID>
+    # Kick off a job and capture the task id that the API returns
+    task_id=$(curl -s -X POST http://localhost:8000/run \
+        -H "Content-Type: application/json" \
+        -d '{"address":"{{ address }}", "model":"gpt-4o"}' | \
+        jq -r '.task_id')
+
+    if [[ -z "${task_id}" || "${task_id}" == "null" ]]; then
+        echo "Failed to obtain task_id from API response" >&2
+        exit 1
+    fi
+
+    echo "Streaming events for task ${task_id}" >&2
+    # -N disables buffering so events appear as they arrive
+    curl -N http://localhost:8000/events/${task_id}
 
 # docker
 dc *command:

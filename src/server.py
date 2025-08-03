@@ -95,14 +95,55 @@ def _start_job(
                 checkpointer=checkpointer,
             )
             cfg = RunnableConfig(configurable={"thread_id": task_id})
+            final_state: dict[str, Any] | None = None
             async for state_dict in app_graph.astream(
                 init_state, cfg, stream_mode="values"
             ):
+                # Keep reference to the latest state so we can inspect it after the loop
+                final_state = state_dict
+                # Try to detect the next tool(s) that the AI wants to call so the
+                # frontend can show richer progress.
+                next_tools: list[str] = []
+                try:
+                    msgs = state_dict.get("messages", [])
+                    if msgs:
+                        last_msg = msgs[-1]
+                        # Depending on (de)serialisation round-trips, the message can
+                        # either be a dict (after JSON round-trip) or an actual
+                        # BaseMessage instance.  Handle both.
+                        tc_list = None
+                        if isinstance(last_msg, dict):
+                            tc_list = last_msg.get("tool_calls")
+                        else:
+                            tc_list = getattr(last_msg, "tool_calls", None)
+                        if tc_list:
+                            next_tools = [tc.get("name") for tc in tc_list if tc]
+                except Exception:
+                    # Don't let telemetry collection break the main loop.
+                    pass
+
                 payload = {
                     "turn": state_dict.get("turn_count"),
                     "metrics": state_dict.get("metrics", []),
+                    "next_tools": next_tools,
                 }
                 await queue.put({"type": "progress", "payload": payload})
+
+            # If we have a final state try to extract the risk assessment JSON from the last message
+            if final_state is not None:
+                try:
+                    messages = final_state.get("messages", [])
+                    if messages:
+                        # The last message added by node_finalize contains the JSON string
+                        last_msg = messages[-1]
+                        # Depending on serialization, it can be a dict or BaseMessage-like object
+                        content = last_msg.get("content") if isinstance(last_msg, dict) else getattr(last_msg, "content", None)
+                        if content:
+                            risk_json = json.loads(content)
+                            await queue.put({"type": "result", "payload": risk_json})
+                except Exception as exc:
+                    logger.warning("Failed to extract final result JSON: %s", exc)
+
             await queue.put({"type": "done"})
         except Exception as exc:
             logger.exception("Job %s failed", task_id)
@@ -137,6 +178,9 @@ async def _event_generator(task_id: str) -> AsyncGenerator[str, None]:
         if message["type"] == "progress":
             data = json.dumps(message["payload"], default=str)
             yield f"event: progress\ndata: {data}\n\n"
+        elif message["type"] == "result":
+            data = json.dumps(message["payload"], default=str)
+            yield f"event: result\ndata: {data}\n\n"
         elif message["type"] == "done":
             yield "event: done\n\n"
             break
