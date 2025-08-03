@@ -2,10 +2,10 @@
 This is a PoC AI agent that takes an Ethereum wallet in input and, by looking at what DeFi activity they are involved with, produces a 0-100 score representing the tolerance for risk of the investor. 
 
 # Features
-- modular architecture, easy to expand (see [Architecture](#architecture))
-- structured final output, in fixed schema (thanks to [instructor](https://github.com/567-labs/instructor))
-- rate limiting configurable per each individual api call
-- resume from a previous run from a specific turn with `just resume threadid:turn`
+- **Modular architecture**: easy to expand (see [Architecture](#architecture))
+- **Parsable**: structured final output, in fixed schema (thanks to [instructor](https://github.com/567-labs/instructor))
+- **Debuggable**: all runs are checkpointed to a local sqlite database, and resumable from a specific turn with `just resume threadid:turn`
+- **Robust**: rate limiting configurable per each individual api call
 - hard stop at `--max-turns` LLM invocations (default: 10)
 - pass only the last `--max-messages` to each LLM invocation (default: 7)
 - json logs with `--log-format json`
@@ -36,9 +36,7 @@ or
 
 # Architecture
 
-The architecture consists of a main `LLM->tools->LLM` loop. 
-
-The LLM calls api_* tools (in [src/providers](src/providers)) to gather data, then uses this to compute metric_* tools (in [src/metrics](src/metrics)) which provide risk metrics - see [Risk Metrics](#risk-metrics). The main prompt used at each iteration can be found [here](src/prompts/system.md). Finally, all the computed metrics are passed to a final prompt, (available [here](src/prompts/risk.md)) that asks the LLM to make a subjective assessment of the risk, based on the provided metrics.
+The architecture consists of a main `LLM->tools->LLM` loop. The LLM calls `api_*` tools (in [src/providers](src/providers)) to gather data, then uses this to compute `metric_*` tools (in [src/metrics](src/metrics)) which provide risk metrics - see [Risk Metrics](#risk-metrics). The main prompt used at each iteration can be found [here](src/prompts/system.md). Finally, all the computed metrics are passed to a final prompt, (available [here](src/prompts/risk.md)) that asks the LLM to make a subjective assessment of the risk, based on the provided metrics.
 
 
 ```mermaid
@@ -69,8 +67,10 @@ flowchart TB
 
 
 ## Motivation
-The core insight that drove this design is that we can think of metrics as pure functions, where we can very easily specify the required inputs and expected outputs, whereas api calls can be considered as messy JSON blobs, with each data provider choosing their own format. Sure, we could painstakingly map them out, and maintain our data types to stay up-to-date with upstream schema changes... but why not use LLMs for that? The main loop is basically doing just that, asking the LLM to figure out what data it needs to compute the metrics, then query api endpoints that sound promising, extract what it needs, until finally it can compute the metrics.
+The core insight that drove this design is that we can think of metrics as pure functions, where we can easily use the typing system to specify very precisely the required inputs and expected outputs, whereas api calls can be considered as messy JSON blobs, with each data provider choosing their own format. Sure, we could painstakingly map them out, and maintain our data types to stay up-to-date with upstream schema changes... but why not use LLMs for that? The main loop is basically doing just that, asking the LLM to figure out what data it needs to compute the metrics, then query api endpoints that sound promising, extract what it needs, until finally it can compute the metrics.
 
+## Extending toolset
+The implementation of both `api_*` wrapper functions and `metrics_*` tools is completely decoupled from the rest of the code. This makes adding more data sources and output metrics very easy.
 
 
 ## Risk Metrics
