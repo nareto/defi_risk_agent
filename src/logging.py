@@ -33,6 +33,12 @@ def configure_logging(fmt: str = "human", *, level: int = logging.INFO) -> None:
         handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(JsonFormatter())
     else:
-        handler = RichHandler(rich_tracebacks=True)
-
+        handler = RichHandler(
+            rich_tracebacks=True,
+            show_path=False,
+            show_level=False,
+            show_time=False,
+        )
     root.addHandler(handler)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("defi_agent").propagate = False

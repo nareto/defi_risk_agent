@@ -19,17 +19,17 @@ def util_wait_five_seconds():
     return
 
 @tool
-def util_multiply_numbers(a: str, b: str) -> str:
+def util_math_multiply_numbers(a: str, b: str) -> str:
     """Multiply two floating point numbers in string format (like '3.14' and '2.0'). Return a floating point in string format"""
     return str(float(a) * float(b))
 
 @tool
-def util_sum_numbers(a: str, b: str) -> str:
+def util_math_sum_numbers(a: str, b: str) -> str:
     """Sum two floating point numbers in string format (like '3.14' and '2.0'). Return a floating point in string format"""
     return str(float(a) + float(b))
 
 @tool
-def util_divide_numbers(a: str, b: str) -> str:
+def util_math_divide_numbers(a: str, b: str) -> str:
     """Divide two floating point numbers in string format (like '3.14' and '2.0'). Return a floating point in string format"""
     b_float = float(b)
     if b_float == 0:
@@ -38,7 +38,7 @@ def util_divide_numbers(a: str, b: str) -> str:
 
 
 @tool
-def util_subtract_numbers(a: str, b: str) -> str:
+def util_math_subtract_numbers(a: str, b: str) -> str:
     """Subtract two floating point numbers in string format (like '3.14' and '2.0'). Return a floating point in string format"""
     return str(float(a) - float(b))
 

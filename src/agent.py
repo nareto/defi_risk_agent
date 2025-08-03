@@ -2,7 +2,7 @@ import inspect
 import json
 import logging
 from pprint import pformat
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Literal, Union
 
 from dotenv import load_dotenv
 
@@ -13,21 +13,16 @@ from langchain_core.messages import (
     BaseMessage,
     HumanMessage,
     SystemMessage,
-    ToolMessage,
     ToolCall,
+    ToolMessage,
+    messages_from_dict,
 )
 from langchain_core.tools import BaseTool
-from pydantic import Field
-
-class StopNowMessage(AIMessage):
-    """A message to signal that the agent should stop."""
-    msg: str = "stop_now"
-
-
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
+from src.agent_utils import StopNow
 from src.utils import get_prompts_dir
 
 logger = logging.getLogger("defi_agent")
@@ -53,16 +48,14 @@ except ImportError:  # older version / missing module
 
 
 # TOOLS
-
-
 # utils
 from src.agent_utils import *
 
 # metrics
 from src.metrics.liquidity import *
 from src.metrics.protocol import *
-from src.metrics.user import *
 from src.metrics.systemic import *
+from src.metrics.user import *
 
 # api calls
 from src.providers.alchemy import *
@@ -89,10 +82,10 @@ TOOLS = [
     metric_calculate_bridged_asset_exposure,
     util_stop_now,
     util_wait_five_seconds,
-    util_multiply_numbers,
-    util_sum_numbers,
-    util_divide_numbers,
-    util_subtract_numbers,
+    util_math_multiply_numbers,
+    util_math_sum_numbers,
+    util_math_divide_numbers,
+    util_math_subtract_numbers,
 ]
 
 METRIC_OUTPUTS = [
@@ -105,18 +98,28 @@ METRIC_NAMES = [m.model_fields["metric_name"].default for m in METRIC_OUTPUTS]
 
 tool_executor = ToolExecutor(TOOLS)
 
+
 class AgentState(BaseModel):
     input_address: str
-    messages: List[BaseMessage] = Field(default_factory=list)
+    # messages: List[Union[AIMessage, HumanMessage, SystemMessage, ToolMessage]] = Field(
+    #     default_factory=list
+    # )
+    messages: list[BaseMessage] = Field(default_factory=list)
     metrics: List[BaseModel] = Field(default_factory=list)
     turn_count: int = 0
     max_turns: int
     max_messages: int
-    llm_with_tools: Any = None  # Will be populated by the setup_llm node
+    # The bound LLM object should NOT be serialized into checkpoints, because it is
+    # not JSON-serialisable and, when re-loaded, becomes a plain dict – which then
+    # breaks calls like `.invoke()`.  We therefore exclude it from Pydantic
+    # serialisation so it is always rebuilt by the `setup_llm` node when a run
+    # (re)starts.
+    llm_with_tools: Any = Field(default=None, exclude=True)
 
     class Config:
         # Allow non-serializable types like the LLM object
         arbitrary_types_allowed = True
+
 
 
 def node_llm(state: AgentState) -> Dict[str, Any]:
@@ -127,20 +130,22 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
     input_prompt = convo_template.format(
         input_address=state.input_address,
     )
-    
+
     # Keep only the last max_messages, ensuring we don't split tool calls from their results
     messages_to_keep = []
     # Start from the end of the messages
     for msg in reversed(state.messages):
         messages_to_keep.insert(0, msg)
         # If we have enough messages and the last one is not a tool message, we can stop
-        if len(messages_to_keep) >= state.max_messages and not isinstance(msg, ToolMessage):
+        if len(messages_to_keep) >= state.max_messages and not isinstance(
+            msg, ToolMessage
+        ):
             # However, we need to make sure the AI message that preceded it is included
             if isinstance(msg, AIMessage) and msg.tool_calls:
-                pass # This is the start of a tool sequence, keep it
+                pass  # This is the start of a tool sequence, keep it
             else:
                 break
-    
+
     messages = messages_to_keep
 
     if not state.messages:
@@ -155,12 +160,52 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
         f"Sending {len(convo)} messages to LLM",
     )
     # The [m.content[:80] for m in convo] part is for brevity in logs
-    logger.debug("LLM→ messages: %s ...", [m.content[:80] for m in convo])
-    ai_msg: AIMessage = state.llm_with_tools.invoke(convo) 
-    logger.info("LLM← tool_calls: %s", ai_msg.tool_calls)
+    logger.debug("LLM→ messages: %s ...", [m.content[:200] for m in convo[-3:]])
+
+    # If we resumed from an *old* checkpoint, llm_with_tools may have been
+    # deserialized as a plain dict and therefore has no `.invoke()` method.
+    # Re-create it on the fly when that happens.
+    llm_bt = state.llm_with_tools
+    # If llm_bt is missing or is a plain dict (as happens after JSON deserialisation)
+    # we need to reconstruct it.
+    def _needs_rebuild(obj):
+        """Return True if obj is clearly not a working RunnableLLM."""
+        if obj is None:
+            return True
+        if isinstance(obj, dict):
+            return True
+        if not hasattr(obj, "invoke"):
+            return True
+        # LangChain Runnable has a `.bound` attribute pointing at the core LLM.
+        bound = getattr(obj, "bound", None)
+        if isinstance(bound, dict):
+            return True
+        if bound is None or not hasattr(bound, "invoke"):
+            return True
+        return False
+
+    if _needs_rebuild(llm_bt):
+        logger.debug("Re-creating llm_with_tools after checkpoint load")
+        from langchain_openai import ChatOpenAI  # delayed import
+
+        llm_core = ChatOpenAI(model="gpt-4o", temperature=0.0, streaming=False)
+        llm_bt = llm_core.bind_tools(TOOLS)
+        state.llm_with_tools = llm_bt  # persist for subsequent nodes
+
+    raw_ai_msg: AIMessage = llm_bt.invoke(convo)
+    logger.info("LLM← tool_calls: %s", raw_ai_msg.tool_calls)
+
+    # Create a new AIMessage with explicit tool_calls to avoid compatibility issues
+    ai_msg = AIMessage(
+        content=raw_ai_msg.content,
+        tool_calls=raw_ai_msg.tool_calls or [],
+        invalid_tool_calls=raw_ai_msg.invalid_tool_calls or [],
+    )
+
     return {
-        "messages": state.messages + [ai_msg], 
+        "messages": state.messages + [ai_msg],
         "turn_count": state.turn_count + 1,
+        "llm_with_tools": llm_bt,  # persist rebuilt instance for next steps
     }
 
 
@@ -178,14 +223,13 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
             logger.info("→ %s ...", pformat(result)[:500])
             logger.info(f"{name} ok")
             if isinstance(result, StopNow):
-                out_messages.append(StopNowMessage(content=""))
-                # Stop processing further tools in this turn
+                out_messages.append(
+                    ToolMessage(
+                        content=json.dumps({"type": "stop_now"}), tool_call_id=call_id
+                    )
+                )
                 break
-            is_metric = False
-            for mo in METRIC_OUTPUTS:
-                if isinstance(result, mo):
-                    is_metric = True
-                    break
+            is_metric = any(isinstance(result, mo) for mo in METRIC_OUTPUTS)
             if is_metric:
                 new_metrics.append(result)
                 out_messages.append(
@@ -198,31 +242,43 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
         except Exception as exc:
             logger.warning("%s error: %s", name, exc)
             logger.info(f"{name} error {exc}")
-            out_messages.append(ToolMessage(content=f"Tool failed with error: {exc}", tool_call_id=call_id))
+            out_messages.append(
+                ToolMessage(
+                    content=json.dumps(
+                        {"status": "error", "message": f"Tool failed with error: {exc}"}
+                    ),
+                    tool_call_id=call_id,
+                )
+            )
 
     return {
-        "messages": state.messages + out_messages, 
+        "messages": state.messages + out_messages,
         "metrics": state.metrics + new_metrics,
     }
 
 
 def decide_next(state: AgentState) -> str:
-    if state.turn_count > state.max_turns:
+    if state.turn_count + 1> state.max_turns:
         logger.info("Max turns reached, summarizing.")
         return "summarize"
     last_message = state.messages[-1]
+    if isinstance(last_message, ToolMessage):
+        try:
+            content = json.loads(last_message.content)
+            if content.get("type") == "stop_now":
+                logger.info("StopNow signal received, ending.")
+                return "end"
+        except json.JSONDecodeError:
+            pass  # Not a JSON tool message
 
-    if isinstance(last_message, StopNowMessage):
-        logger.info("StopNow signal received, ending.")
-        return "end"
     produced_metrics = {m.metric_name for m in state.metrics}
     if produced_metrics.issuperset(METRIC_NAMES):
         logger.info("All metrics produced, summarizing.")
         return "summarize"
-    
+
     if isinstance(last_message, AIMessage) and last_message.tool_calls:
         return "continue"
-        
+
     logger.info("No more tool calls, ending.")
     return "end"
 
@@ -237,12 +293,10 @@ def node_summarize(state: AgentState) -> Dict[str, Any]:
     with open(get_prompts_dir() + "/risk.md") as f:
         template_prompt = f.read()
     prompt = template_prompt.format(metrics_blob=metrics_blob)
-    
+
     # Use the same model as the main agent
     llm = state.llm_with_tools
-    raw_msg: AIMessage = llm.invoke(
-        [SystemMessage(prompt)]
-    )  # type: ignore
+    raw_msg: AIMessage = llm.invoke([SystemMessage(prompt)])  # type: ignore
 
     raw = raw_msg.content.strip()
     if raw.startswith("```"):
@@ -259,12 +313,12 @@ def node_summarize(state: AgentState) -> Dict[str, Any]:
     return {"messages": state.messages + [AIMessage(content=final_json)]}
 
 
-def build_graph(model: str, temperature: float):
+def build_graph(model: str, temperature: float, checkpointer):
     llm_core = ChatOpenAI(model=model, temperature=temperature, streaming=False)
     llm_with_tools = llm_core.bind_tools(TOOLS)
-    
+
     graph = StateGraph(AgentState)
-    
+
     # This node will be the entry point, ensuring the LLM is always in the state
     def setup_llm(state: AgentState) -> Dict[str, Any]:
         return {"llm_with_tools": llm_with_tools}
@@ -276,12 +330,12 @@ def build_graph(model: str, temperature: float):
 
     graph.set_entry_point("setup")
     graph.add_edge("setup", "agent")
-    
+
     graph.add_conditional_edges(
         "agent",
         decide_next,
         {"continue": "action", "summarize": "summarize", "end": END},
     )
     graph.add_edge("action", "agent")
-    app = graph.compile()
+    app = graph.compile(checkpointer=checkpointer)
     return app
