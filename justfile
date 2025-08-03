@@ -19,9 +19,11 @@ debug address:
 brun:
     ./batch_run.sh
 
-# poetry run pytest --ipdb
 test:
     poetry run pytest tests/ "${@}"  --pdb --pdbcls=IPython.core.debugger:Pdb -sx
+
+tgraph:
+    poetry run pytest tests/providers/test_graph.py "${@}"  --pdb --pdbcls=IPython.core.debugger:Pdb -sx
 
 resume_last turn:
     #!/usr/bin/env bash
