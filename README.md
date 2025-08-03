@@ -36,9 +36,10 @@ or
 
 # Architecture
 
-The architecture consists of a main LLM->tools->LLM loop. The end goal is to compute the risk metrics corresponding to metrics_* tools - see [Risk Metrics](#risk-metrics). To compute those, the LLM is instructed to first query the api_* tools until it has enough data to compute the metrics_* tools - main prompt [here](src/prompts/system.md). The utils_* tools are simple utilities to allow the LLM to decide to stop the loop if it goes in an error loop, or do simple math operations.
+The architecture consists of a main `LLM->tools->LLM` loop. 
 
-Once all the metrics are computed, this are passed to one final prompt (available [here](src/prompts/risk.md)) that asks the LLM to make a subjective assessment of the risk, based on the provided metrics, 
+The LLM calls api_* tools (in [src/providers](src/providers)) to gather data, then uses this to compute metric_* tools (in [src/metrics](src/metrics)) which provide risk metrics - see [Risk Metrics](#risk-metrics). The main prompt used at each iteration can be found [here](src/prompts/system.md). Finally, all the computed metrics are passed to a final prompt, (available [here](src/prompts/risk.md)) that asks the LLM to make a subjective assessment of the risk, based on the provided metrics.
+
 
 ```mermaid
 flowchart TB
@@ -65,6 +66,10 @@ flowchart TB
     end
 
 ```
+
+
+## Motivation
+The core insight that drove this design is that we can think of metrics as pure functions, where we can very easily specify the required inputs and expected outputs, whereas api calls can be considered as messy JSON blobs, with each data provider choosing their own format. Sure, we could painstakingly map them out, and maintain our data types to stay up-to-date with upstream schema changes... but why not use LLMs for that? The main loop is basically doing just that, asking the LLM to figure out what data it needs to compute the metrics, then query api endpoints that sound promising, extract what it needs, until finally it can compute the metrics.
 
 
 
