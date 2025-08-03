@@ -1,4 +1,3 @@
-# from https://github.com/langchain-ai/helm/blob/main/charts/langsmith/docker-compose/docker-compose.yaml
 services:
   langchain-playground:
     image: ${_REGISTRY:-docker.io}/langchain/langsmith-playground:${_LANGSMITH_IMAGE_VERSION:-0.10.25}
@@ -273,6 +272,7 @@ services:
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
       - CLICKHOUSE_NATIVE_PORT=${CLICKHOUSE_NATIVE_PORT:-9000}
       - CLICKHOUSE_TLS=${CLICKHOUSE_TLS:-false}
+      - MIGRATE_DB_TABLE_ENGINE=MergeTree
     command:
       [
         "bash",

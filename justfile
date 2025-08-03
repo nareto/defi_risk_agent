@@ -8,5 +8,5 @@ brun:
 test:
     poetry run pytest tests/ "${@}"  --pdb --pdbcls=IPython.core.debugger:Pdb -sx
 
-langsmith:
-    docker-compose -f docker-compose.langsmith.yml up 
+langsmith *command:
+    docker-compose -f docker-compose.langsmith.yml {{ command }}
