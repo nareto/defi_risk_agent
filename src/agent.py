@@ -21,7 +21,7 @@ from langchain_core.messages import (
 )
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
-from langgraph.graph import END, StateGraph
+from langgraph.graph import  StateGraph
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from src.agent_utils import StopNow
@@ -368,7 +368,7 @@ def build_graph(model: str, temperature: float, checkpointer):
     graph.add_conditional_edges(
         "agent",
         decide_next,
-        {"continue": "action", "finalize": "finalize", "end": END},
+        {"continue": "action", "finalize": "finalize"},
     )
     graph.add_edge("action", "agent")
     app = graph.compile(checkpointer=checkpointer)
