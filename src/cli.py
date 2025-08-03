@@ -26,7 +26,7 @@ console = Console()
     "--max-turns", type=int, default=10, help="Max turns before forcing summary."
 )
 @click.option(
-    "--max-messages", type=int, default=5, help="Max messages to keep in history."
+    "--max-messages", type=int, default=7, help="Max messages to keep in history."
 )
 @click.option("--model", type=str, default="gpt-4o", help="OpenAI model to use.")
 @click.option(
@@ -118,6 +118,8 @@ def main(
                 turn_count=0,
                 max_turns=max_turns,
                 max_messages=max_messages,
+                model_name=model,
+                temperature=temperature,
             )
 
         app = build_graph(

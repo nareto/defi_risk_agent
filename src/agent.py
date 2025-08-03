@@ -2,8 +2,10 @@ import inspect
 import json
 import logging
 from pprint import pformat
+from string import Template
 from typing import Any, Callable, Dict, List, Literal, Union
 
+import instructor
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,7 +29,6 @@ from src.utils import get_prompts_dir
 
 logger = logging.getLogger("defi_agent")
 
-# ───────────── 1. portable ToolExecutor import (with shim) ────────────────
 
 try:
     from langgraph.prebuilt.tool_executor import ToolExecutor  # type: ignore
@@ -105,7 +106,8 @@ class AgentState(BaseModel):
     #     default_factory=list
     # )
     messages: list[BaseMessage] = Field(default_factory=list)
-    metrics: List[BaseModel] = Field(default_factory=list)
+    # Store metrics as plain dicts so they remain JSON-serialisable across checkpoint
+    metrics: List[Dict[str, Any]] = Field(default_factory=list)
     turn_count: int = 0
     max_turns: int
     max_messages: int
@@ -115,14 +117,17 @@ class AgentState(BaseModel):
     # serialisation so it is always rebuilt by the `setup_llm` node when a run
     # (re)starts.
     llm_with_tools: Any = Field(default=None, exclude=True)
+    # Store model configuration so we can rebuild the LLM after checkpoint reloads
+    model_name: str = "gpt-4o"
+    temperature: float = 0.0
 
     class Config:
         # Allow non-serializable types like the LLM object
         arbitrary_types_allowed = True
 
 
-
 def node_llm(state: AgentState) -> Dict[str, Any]:
+    logger.info(f"─── Turn start: {state.turn_count/{state.max_turns} " + "─" * 60)
     with open(get_prompts_dir() + "/system.md") as f:
         system_prompt = f.read()
     with open(get_prompts_dir() + "/input.md") as f:
@@ -166,6 +171,7 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
     # deserialized as a plain dict and therefore has no `.invoke()` method.
     # Re-create it on the fly when that happens.
     llm_bt = state.llm_with_tools
+
     # If llm_bt is missing or is a plain dict (as happens after JSON deserialisation)
     # we need to reconstruct it.
     def _needs_rebuild(obj):
@@ -188,9 +194,14 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
         logger.debug("Re-creating llm_with_tools after checkpoint load")
         from langchain_openai import ChatOpenAI  # delayed import
 
-        llm_core = ChatOpenAI(model="gpt-4o", temperature=0.0, streaming=False)
+        model_name = getattr(state, "model_name", "gpt-4o")
+        temperature = getattr(state, "temperature", 0.0)
+        llm_core = ChatOpenAI(
+            model=model_name, temperature=temperature, streaming=False
+        )
         llm_bt = llm_core.bind_tools(TOOLS)
-        state.llm_with_tools = llm_bt  # persist for subsequent nodes
+        # Persist rebuilt instance and configuration for next steps
+        state.llm_with_tools = llm_bt
 
     raw_ai_msg: AIMessage = llm_bt.invoke(convo)
     logger.info("LLM← tool_calls: %s", raw_ai_msg.tool_calls)
@@ -231,9 +242,11 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
                 break
             is_metric = any(isinstance(result, mo) for mo in METRIC_OUTPUTS)
             if is_metric:
-                new_metrics.append(result)
+                # Persist as plain dict for easy checkpoint serialisation
+                metric_dict = result.model_dump()
+                new_metrics.append(metric_dict)
                 out_messages.append(
-                    ToolMessage(content=result.model_dump_json(), tool_call_id=call_id)
+                    ToolMessage(content=json.dumps(metric_dict), tool_call_id=call_id)
                 )
             else:
                 out_messages.append(
@@ -258,7 +271,7 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
 
 
 def decide_next(state: AgentState) -> str:
-    if state.turn_count + 1> state.max_turns:
+    if state.turn_count + 1 > state.max_turns:
         logger.info("Max turns reached, finalizing.")
         return "finalize"
     last_message = state.messages[-1]
@@ -266,12 +279,16 @@ def decide_next(state: AgentState) -> str:
         try:
             content = json.loads(last_message.content)
             if content.get("type") == "stop_now":
-                logger.info("StopNow signal received, ending.")
-                return "end"
+                logger.info("StopNow signal received, finalizing.")
+                return "finalize"
         except json.JSONDecodeError:
             pass  # Not a JSON tool message
 
-    produced_metrics = {m.metric_name for m in state.metrics}
+    def _metric_name(m):
+        if isinstance(m, dict):
+            return m.get("metric_name")
+        return getattr(m, "metric_name", None)
+    produced_metrics = { _metric_name(m) for m in state.metrics if _metric_name(m) }
     if produced_metrics.issuperset(METRIC_NAMES):
         logger.info("All metrics produced, finalizing.")
         return "finalize"
@@ -279,38 +296,46 @@ def decide_next(state: AgentState) -> str:
     if isinstance(last_message, AIMessage) and last_message.tool_calls:
         return "continue"
 
-    logger.info("No more tool calls, ending.")
-    return "end"
+    logger.info("No more tool calls, finalizing.")
+    return "finalize"
 
 
-class RiskSummaryOutput(BaseModel):
-    risk_score: float = Field(ge=0, le=100)
-    justification: str
+class MetricsCollection(BaseModel):
+    data: List[BaseModel]
+
+
+class RiskFinalOutput(BaseModel):
+    risk_score: float = Field(
+        ge=0,
+        le=100,
+        description="Global risk score for the wallet, from 0 (very safe investor) to 100 (complete defi degen)",
+    )
+    justification: str = Field(
+        description="A justification in English for the score given"
+    )
+    metrics: MetricsCollection = Field(
+        description="The JSON data received in input, copied here verbatim"
+    )
 
 
 def node_finalize(state: AgentState) -> Dict[str, Any]:
-    metrics_blob = "\n".join(m.model_dump_json() for m in state.metrics)
-    with open(get_prompts_dir() + "/risk.md") as f:
-        template_prompt = f.read()
-    prompt = template_prompt.format(metrics_blob=metrics_blob)
+    # state.metrics is already a list[dict]; no additional validation needed for prompt
+    metrics_blob = json.dumps({"data": state.metrics}, indent=2)
 
-    # Use the same model as the main agent
-    llm = state.llm_with_tools
-    raw_msg: AIMessage = llm.invoke([SystemMessage(prompt)])  # type: ignore
+    template_prompt = Template(open(get_prompts_dir() + "/risk.md").read())
+    prompt = template_prompt.substitute(metrics_blob=metrics_blob)
 
-    raw = raw_msg.content.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+    logger.info(f"DONE. PROMPT:\n{prompt}")
 
-    try:
-        validated = RiskSummaryOutput(**json.loads(raw))
-        final_json = validated.model_dump_json()
-        logger.info("Validated summary: %s", final_json)
-    except Exception as exc:  # demo: broad catch
-        final_json = json.dumps({"error": f"Failed to validate: {exc}", "raw": raw})
-        logger.warning("Validation failed: %s", exc)
+    client = instructor.from_provider(f"openai/{state.model_name}")
+    output: RiskFinalOutput = client.chat.completions.create(
+        response_model=RiskFinalOutput,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    logger.info(f"DONE. output:\n{output.model_dump_json(indent=2)}")
 
-    return {"messages": state.messages + [AIMessage(content=final_json)]}
+
+    return {"messages": state.messages + [AIMessage(content=output.model_dump_json(indent=2))]}
 
 
 def build_graph(model: str, temperature: float, checkpointer):
@@ -321,7 +346,12 @@ def build_graph(model: str, temperature: float, checkpointer):
 
     # This node will be the entry point, ensuring the LLM is always in the state
     def setup_llm(state: AgentState) -> Dict[str, Any]:
-        return {"llm_with_tools": llm_with_tools}
+        # Ensure model configuration is stored in the state so that node_llm can rebuild
+        return {
+            "llm_with_tools": llm_with_tools,
+            "model_name": model,
+            "temperature": temperature,
+        }
 
     graph.add_node("setup", setup_llm)
     graph.add_node("agent", node_llm)

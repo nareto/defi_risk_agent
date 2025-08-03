@@ -36,8 +36,8 @@ def configure_logging(fmt: str = "human", *, level: int = logging.INFO) -> None:
         handler = RichHandler(
             rich_tracebacks=True,
             show_path=False,
-            show_level=False,
-            show_time=False,
+            show_level=True,   # Display log level
+            show_time=True,    # Display timestamp
         )
     root.addHandler(handler)
     # Quiet down noisy third-party libraries so that our own DEBUG output is

@@ -9,4 +9,4 @@ You are an expert DeFi risk analyst analyzing a wallet of a DeFi investor. Your 
 }
 
 JSON DATA:
-{metrics_blob}
+$metrics_blob
