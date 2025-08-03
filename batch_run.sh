@@ -2,7 +2,7 @@
 
 # 1. Create a timestamped subdirectory in ./output
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H-%M-%SZ")
-OUTPUT_DIR="./output/run_${TIMESTAMP}"
+OUTPUT_DIR="./runs_output/batchrun_${TIMESTAMP}"
 mkdir -p "$OUTPUT_DIR"
 echo "Created output directory: $OUTPUT_DIR"
 

@@ -28,7 +28,6 @@ from pydantic import BaseModel, Field, PrivateAttr
 from src.utils import get_prompts_dir
 
 logger = logging.getLogger("defi_agent")
-logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler())
 
 # ───────────── 1. portable ToolExecutor import (with shim) ────────────────
@@ -108,7 +107,6 @@ class AgentState(BaseModel):
     input_address: str
     messages: List[BaseMessage] = Field(default_factory=list)
     metrics: List[BaseModel] = Field(default_factory=list)
-    logs: List[str] = Field(default_factory=list)
     turn_count: int = 0
     max_turns: int
     max_messages: int
@@ -152,15 +150,14 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
         convo = [SystemMessage(system_prompt)] + messages
 
     logger.info(
-        f"Turn {state.turn_count}/{state.max_turns}: Sending {len(convo)} messages to LLM",
+        f"Sending {len(convo)} messages to LLM",
     )
     # The [m.content[:80] for m in convo] part is for brevity in logs
-    logger.debug("LLM→ messages: %s", [m.content[:80] for m in convo])
+    logger.debug("LLM→ messages: %s ...", [m.content[:80] for m in convo])
     ai_msg: AIMessage = state.llm_with_tools.invoke(convo) 
     logger.info("LLM← tool_calls: %s", ai_msg.tool_calls)
     return {
         "messages": state.messages + [ai_msg], 
-        "logs": state.logs + ["AI decided tool calls"], 
         "turn_count": state.turn_count + 1,
     }
 
@@ -169,7 +166,6 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
     ai_msg: AIMessage = state.messages[-1]
     out_messages: List[BaseMessage] = []
     new_metrics: List[BaseModel] = []
-    new_logs: List[str] = []
 
     for tc in ai_msg.tool_calls:
         name, call_id = tc["name"], tc["id"]
@@ -177,8 +173,8 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
         logger.info("Executing %s args=%s", name, args)
         try:
             result = tool_executor.invoke({"name": name, "arguments": args})
-            logger.info("→ %s", pformat(result))
-            new_logs.append(f"{name} ok")
+            logger.info("→ %s ...", pformat(result)[:500])
+            logger.info(f"{name} ok")
             if isinstance(result, StopNow):
                 out_messages.append(StopNowMessage(content=""))
                 # Stop processing further tools in this turn
@@ -199,12 +195,11 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
                 )
         except Exception as exc:
             logger.warning("%s error: %s", name, exc)
-            new_logs.append(f"{name} error {exc}")
+            logger.info(f"{name} error {exc}")
             out_messages.append(ToolMessage(content=f"Tool failed with error: {exc}", tool_call_id=call_id))
 
     return {
         "messages": state.messages + out_messages, 
-        "logs": state.logs + new_logs,
         "metrics": state.metrics + new_metrics,
     }
 

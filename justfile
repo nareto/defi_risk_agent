@@ -1,5 +1,8 @@
 run address:
-    poetry run -m src.main -v {{ address }}
+    poetry run python -m src.cli {{ address }}
+
+debug address:
+    poetry run python -m ipdb -c continue -m src.cli -v {{ address }}
 
 brun:
     ./batch_run.sh
