@@ -1,5 +1,5 @@
 # Defi Risk Agent
-This is a PoC AI agent that takes an Ethereum wallet in input and, by looking at what DeFi activity they are involved with, produces a 0-100 score representing the tolerance for risk of the investor. 
+This is a PoC [LangGraph](https://www.langchain.com/langgraph) AI agent that takes an Ethereum wallet in input and, by looking at what DeFi activity they are involved with, produces a 0-100 score representing the tolerance for risk of the investor. 
 
 # Features
 - **Modular architecture**: easy to expand (see [Architecture](#architecture))

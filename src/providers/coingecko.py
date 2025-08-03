@@ -1,5 +1,5 @@
 import datetime as dt
-import decimal
+# import decimal
 
 import requests
 from langchain_core.tools import tool
@@ -125,7 +125,8 @@ def api_coingecko_contract(address: str, chain: str = "ethereum"):
     # r.raise_for_status()
     data = r.json()
 
-    market_cap = decimal.Decimal(data["market_data"]["market_cap"]["usd"])
+    # market_cap = decimal.Decimal(data["market_data"]["market_cap"]["usd"])
+    market_cap = data["market_data"]["market_cap"]["usd"]
     rank = data["market_cap_rank"]  # may be None for tiny tokens
     return {
         "symbol": data["symbol"],
@@ -283,7 +284,8 @@ def api_coingecko_coin_data(coin_id):
 
     # return data
 
-    market_cap = decimal.Decimal(data["market_data"]["market_cap"]["usd"])
+    # market_cap = decimal.Decimal(data["market_data"]["market_cap"]["usd"])
+    market_cap = data["market_data"]["market_cap"]["usd"]
     rank = data["market_cap_rank"]
     return {
         "symbol": data["symbol"],

@@ -1,6 +1,5 @@
 import requests
 import datetime as dt
-from decimal import Decimal
 from langchain_core.tools import tool
 from src.utils import rate_limit
 from typing import Annotated   
