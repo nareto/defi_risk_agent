@@ -87,7 +87,7 @@ export default function HomePage() {
   const [showLogs, setShowLogs] = useState(false);
 
   /* ---------------- Analysis hook ---------------- */
-  const { riskScore, metrics, loading, latestMsg, logs, start } = useAnalysis();
+  const { riskScore, metrics, loading, latestMsg, logs, justification, start } = useAnalysis();
 
   /* ---------------- Refs ---------------- */
   const logRef = useRef<HTMLPreElement>(null);
@@ -140,7 +140,12 @@ export default function HomePage() {
           {!loading && riskScore !== null && (
             <>
               <Gauge value={riskScore} />
-              <BarChart metrics={metrics.filter((m) => m.metric_name !== "Risk Score")} />
+              {justification && (
+                <p className="text-center text-gray-700 text-sm max-w-prose whitespace-pre-wrap">
+                  {justification}
+                </p>
+              )}
+              <BarChart metrics={metrics.filter((m: Metric) => m.metric_name !== "Risk Score")} />
             </>
           )}
         </div>

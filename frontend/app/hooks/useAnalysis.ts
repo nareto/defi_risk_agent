@@ -14,11 +14,18 @@ interface ProgressPayload {
     next_tools: string[];
 }
 
+interface ResultPayload {
+    risk_score: number;
+    justification?: string;
+    metrics?: Metric[];
+}
+
 export function useAnalysis() {
     const [riskScore, setRiskScore] = useState<number | null>(null);
     const [metrics, setMetrics] = useState<Metric[]>([]);
     const [loading, setLoading] = useState(false);
     const [latestMsg, setLatestMsg] = useState("");
+    const [justification, setJustification] = useState<string | null>(null);
     const [logs, setLogs] = useState<string[]>([]);
 
     const esRef = useRef<EventSource | null>(null);
@@ -31,6 +38,7 @@ export function useAnalysis() {
         setLoading(true);
         setRiskScore(null);
         setMetrics([]);
+        setJustification(null);
         setLogs([]);
         setLatestMsg("");
 
@@ -67,9 +75,10 @@ export function useAnalysis() {
 
                 es.addEventListener("result", (e) => {
                     console.log("[useAnalysis] result", (e as MessageEvent).data);
-                    const data = JSON.parse((e as MessageEvent).data);
+                    const data = JSON.parse((e as MessageEvent).data) as ResultPayload;
                     setRiskScore(data.risk_score);
                     setMetrics(data.metrics || []);
+                    setJustification(data.justification || null);
                     setLatestMsg("Analysis complete");
                     appendLog("Received final result.");
                     setLoading(false);
@@ -106,6 +115,7 @@ export function useAnalysis() {
         loading,
         latestMsg,
         logs,
+        justification,
         start,
     };
 }

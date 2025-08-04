@@ -1,5 +1,8 @@
 # Defi Risk Agent
+![alt text](image.png)
+
 This is a PoC [LangGraph](https://www.langchain.com/langgraph) AI agent that takes an Ethereum wallet in input and, by looking at what DeFi activity they are involved with, produces a 0-100 score representing the tolerance for risk of the investor. 
+
 
 # Features
 - Frontend and cli 
@@ -11,31 +14,51 @@ This is a PoC [LangGraph](https://www.langchain.com/langgraph) AI agent that tak
 - pass only the last `--max-messages` to each LLM invocation (default: 7)
 - json logs with `--log-format json`
 
-# Installation
+# Quickstart
+To run commands in the [justfile](justfile) shown here, you need  [just](https://github.com/casey/just)
 
-requires [poetry](https://python-poetry.org/docs/):
+## Frontend
+Run
 
-`poetry install`
+```
+just dc up --build -d
+```
 
-# Running
-Manually for one address (with [just](https://github.com/casey/just)):
 
-`just run 0x7a29aE65Bf25Dfb6e554BF0468a6c23ed99a8DC2`
+## CLI
 
-or:
+Install with [poetry](https://python-poetry.org/docs/):
 
-`poetry run -m src.cli 0x7a29aE65Bf25Dfb6e554BF0468a6c23ed99a8DC2`
+```
+poetry install
+```
+
+Run manually for one address :
+
+```
+just run 0x7a29aE65Bf25Dfb6e554BF0468a6c23ed99a8DC2
+```
+
+or without using just:
+
+```
+poetry run -m src.cli 0x7a29aE65Bf25Dfb6e554BF0468a6c23ed99a8DC2
+```
 
 
 For a batch of addresses:
 
-`just brun`
+```
+just brun
+```
 
 or
 
-`./batch_run.sh`
+```
+./batch_run.sh
+```
 
-# Architecture
+# Agent Architecture
 
 The architecture consists of a main `LLM->tools->LLM` loop. The LLM calls `api_*` tools (in [src/providers](src/providers)) to gather data, then uses this to compute `metric_*` tools (in [src/metrics](src/metrics)) which provide risk metrics - see [Risk Metrics](#risk-metrics). The main prompt used at each iteration can be found [here](src/prompts/system.md). Finally, all the computed metrics are passed to a final prompt, (available [here](src/prompts/risk.md)) that asks the LLM to make a subjective assessment of the risk, based on the provided metrics.
 
