@@ -4,15 +4,17 @@
 This is a PoC [LangGraph](https://www.langchain.com/langgraph) AI agent that takes an Ethereum wallet in input and, by looking at what DeFi activity they are involved with, produces a 0-100 score representing the tolerance for risk of the investor. 
 
 
-# Features
-- Frontend and cli 
-- **Modular architecture**: easy to expand (see [Architecture](#architecture))
-- **Parsable**: structured final output, in fixed schema (thanks to [instructor](https://github.com/567-labs/instructor))
-- **Debuggable**: all runs are checkpointed to a local sqlite database, and resumable from a specific turn with `just resume threadid:turn`
-- **Robust**: rate limiting configurable per each individual api call
-- hard stop at `--max-turns` LLM invocations (default: 10)
-- pass only the last `--max-messages` to each LLM invocation (default: 7)
-- json logs with `--log-format json`
+# ✨ Features
+- 🖥️  Dual interface: Next.js frontend and CLI
+- 🛠️  **Modular plug-in architecture** – adding new `api_*` or `metric_*` tools is simple (see [Agent Architecture](#agent-architecture))
+- 📊 **Structured output** – final assessment is strict JSON that your code can rely on (powered by [instructor](https://github.com/567-labs/instructor))
+- 📝 **Checkpoint & replay** – every run is snap-shotted to Postgres/sqlite; resume any thread/turn with `just resume <thread_id>:<turn>` (Note: this will re-execute API calls)
+- 🚦 **Per-provider rate-limits** – set API limits with `@rate_limit` decorator
+- ⛔ Hard cap of `--max-turns` LLM calls (default 10) to keep costs predictable
+- 📨 Sends only the last `--max-messages` (default 7) back to the model each turn – keeps context tight and cheap
+- 📑 Optional JSON log output with `--log-format json` for seamless ingestion in observability stacks
+
+_This IS a proof-of-concept, and the generated risk score is not reliable_
 
 # Quickstart
 To run commands in the [justfile](justfile) shown here, you need  [just](https://github.com/casey/just)
