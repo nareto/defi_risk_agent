@@ -7,6 +7,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# production build image; dev uses volumes & `npm run dev`
 RUN npm run build
 
 FROM node:20-alpine AS runner

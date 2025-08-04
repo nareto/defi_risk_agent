@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { PieChart } from "react-minimal-pie-chart";
+import { useAnalysis } from "./hooks/useAnalysis";
 
 // ---------- Types ----------
 interface Metric {
@@ -9,12 +10,6 @@ interface Metric {
   percentage_exposure?: number;
   description?: string;
   hhi_score?: number;
-}
-
-interface ProgressPayload {
-  turn: number;
-  metrics: Metric[];
-  next_tools: string[];
 }
 
 // ---------- Visual Components ----------
@@ -36,7 +31,7 @@ const Gauge = ({ value }: { value: number }) => {
           data={[{ value: 1, color }]}
           lineWidth={20}
           startAngle={180}
-          lengthAngle={roundedValue * 1.8} // 100% = 180 degrees
+          lengthAngle={roundedValue * 1.8}
           background="#e5e7eb"
           animate
         />
@@ -58,7 +53,7 @@ const BarChart = ({ metrics }: { metrics: Metric[] }) => {
       value:
         m.percentage_exposure !== undefined
           ? m.percentage_exposure
-          : (m.hhi_score || 0) * 100, // Normalize HHI to 0-100 scale
+          : (m.hhi_score || 0) * 100,
     }))
     .filter((d) => d.value > 0);
 
@@ -85,109 +80,29 @@ const BarChart = ({ metrics }: { metrics: Metric[] }) => {
   );
 };
 
-
 // ---------- Component ----------
 export default function HomePage() {
-  /* ---------------- State ---------------- */
+  /* ---------------- Local state ---------------- */
   const [address, setAddress] = useState("");
-  const [riskScore, setRiskScore] = useState<number | null>(null);
-  const [metrics, setMetrics] = useState<Metric[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [latestMsg, setLatestMsg] = useState<string>("");
-  const [logs, setLogs] = useState<string[]>([]);
-  const [showLogs, setShowLogs] = useState<boolean>(false);
+  const [showLogs, setShowLogs] = useState(false);
+
+  /* ---------------- Analysis hook ---------------- */
+  const { riskScore, metrics, loading, latestMsg, logs, start } = useAnalysis();
 
   /* ---------------- Refs ---------------- */
   const logRef = useRef<HTMLPreElement>(null);
 
-  /* ------------- Helpers --------------- */
-  const appendLog = (text: string) => setLogs((prev) => [...prev, text]);
-
-  /* Auto-scroll logs */
+  /* ---------------- Effects ---------------- */
   useEffect(() => {
     if (logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight;
     }
   }, [logs]);
 
-  /* ---------------- Actions ---------------- */
-  async function handleAnalyze() {
-    if (!address.trim()) return;
-
-    // Reset
-    setLoading(true);
-    setRiskScore(null);
-    setMetrics([]);
-    setLogs([]);
-    setLatestMsg("");
-
-    try {
-      const res = await fetch("/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address }),
-      });
-      const { task_id } = await res.json();
-
-      const es = new EventSource(`/events/${task_id}`);
-
-      // --- progress ---
-      es.addEventListener("progress", (e) => {
-        const data = JSON.parse((e as MessageEvent).data) as ProgressPayload;
-
-        // Update metrics so final view has everything
-        setMetrics(data.metrics);
-
-        // Build human-readable message & append to logs
-        const logLine = `[Turn ${data.turn}] ` +
-          (data.next_tools.length
-            ? `Next tools → ${data.next_tools.join(", ")}`
-            : data.metrics.length
-            ? `Metrics → ${data.metrics.map((m) => m.metric_name).join(", ")}`
-            : "Waiting for next action …");
-
-        appendLog(logLine);
-        setLatestMsg(logLine);
-      });
-
-      // --- result (final) ---
-      es.addEventListener("result", (e) => {
-        const data = JSON.parse((e as MessageEvent).data);
-        setRiskScore(data.risk_score);
-        setMetrics(data.metrics || []);
-        setLatestMsg("Analysis complete");
-        appendLog("Received final result.");
-
-        // In case the server (or any proxy in front of it) closes the SSE
-        // connection immediately after sending the result event, the browser
-        // may never deliver the subsequent "done" event to the client.  This
-        // would leave the UI stuck in the loading state.  To guard against
-        // that, we consider the analysis finished as soon as we receive the
-        // "result" event.
-        setLoading(false);
-        es.close();
-      });
-
-      // --- errors ---
-      es.addEventListener("error", (e) => {
-        appendLog("Error: " + (e as MessageEvent).data);
-        es.close();
-        setLoading(false);
-        setLatestMsg("Error");
-      });
-
-      // --- done / close ---
-      es.addEventListener("done", () => {
-        appendLog("Job finished.");
-        es.close();
-        setLoading(false);
-      });
-    } catch (err: any) {
-      appendLog("Request failed: " + err.message);
-      setLoading(false);
-      setLatestMsg("Error");
-    }
-  }
+  /* ---------------- Handlers ---------------- */
+  const handleAnalyze = () => {
+    start(address);
+  };
 
   /* ---------------- Render ---------------- */
   return (
@@ -225,7 +140,7 @@ export default function HomePage() {
           {!loading && riskScore !== null && (
             <>
               <Gauge value={riskScore} />
-              <BarChart metrics={metrics.filter(m => m.metric_name !== 'Risk Score')} />
+              <BarChart metrics={metrics.filter((m) => m.metric_name !== "Risk Score")} />
             </>
           )}
         </div>
