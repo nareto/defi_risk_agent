@@ -2,6 +2,7 @@
 This is a PoC [LangGraph](https://www.langchain.com/langgraph) AI agent that takes an Ethereum wallet in input and, by looking at what DeFi activity they are involved with, produces a 0-100 score representing the tolerance for risk of the investor. 
 
 # Features
+- Frontend and cli 
 - **Modular architecture**: easy to expand (see [Architecture](#architecture))
 - **Parsable**: structured final output, in fixed schema (thanks to [instructor](https://github.com/567-labs/instructor))
 - **Debuggable**: all runs are checkpointed to a local sqlite database, and resumable from a specific turn with `just resume threadid:turn`

@@ -187,6 +187,9 @@ async def _event_generator(task_id: str) -> AsyncGenerator[str, None]:
         elif message["type"] == "error":
             yield f"event: error\ndata: {message['message']}\n\n"
             break
+        
+        # Force a flush of the stream to avoid buffering issues
+        await asyncio.sleep(0.01)
 
 
 @app.get("/events/{task_id}")
