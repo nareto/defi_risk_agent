@@ -3,7 +3,7 @@
 // Correct signature for App Router route handler
 export const runtime = 'nodejs';          // makes “process.env” legal
 
-export async function GET(_req: Request, { params }: { params: { taskId: string } }) {
+export async function GET(_req: Request, { params }: any) {
   const { taskId } = params;
   const backendBase = process.env.BACKEND_URL ?? "http://backend:8000";
   const backendUrl = `${backendBase}/events/${taskId}`;
