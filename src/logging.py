@@ -1,10 +1,10 @@
 import json, logging, sys
 from types import FrameType
-from typing import Any, Dict
+from typing import Any, Dict, Optional, override
 from rich.logging import RichHandler
 class JsonFormatter(logging.Formatter):
     """Turn a LogRecord into a single-line JSON object."""
-    def format(self, record: logging.LogRecord) -> str:          # :contentReference[oaicite:4]{index=4}
+    def format(self, record: logging.LogRecord) -> str:         
         log: Dict[str, Any] = {
             "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
             "lvl": record.levelname,
@@ -16,6 +16,25 @@ class JsonFormatter(logging.Formatter):
         if record.exc_info:
             log["exc_info"] = self.formatException(record.exc_info)
         return json.dumps(log)
+
+class LongFormatter(logging.Formatter):
+    """Truncate long lines"""
+    def __init__ (self, max_length: Optional[int] = None):
+        if max_length is not None:
+            assert max_length > 3
+        self.max_length = max_length
+        super().__init__()
+
+    @override
+    def format(self, record: logging.LogRecord) -> str:
+        if self.max_length is not None:
+            original_msg = record.getMessage()
+            if len(original_msg) > self.max_length:
+                truncated_msg = original_msg[:int(self.max_length/3)] + " ...<snip>... " + original_msg[-int(self.max_length/3):]
+                record.msg = truncated_msg
+                record.args = ()
+        return super().format(record)
+
 
 def configure_logging(fmt: str = "human", *, level: int = logging.INFO) -> None:
     """
@@ -39,6 +58,7 @@ def configure_logging(fmt: str = "human", *, level: int = logging.INFO) -> None:
             show_level=True,   # Display log level
             show_time=True,    # Display timestamp
         )
+        handler.setFormatter(LongFormatter(max_length= None if level < logging.INFO else 200))
     root.addHandler(handler)
     # Quiet down noisy third-party libraries so that our own DEBUG output is
     # readable even when the root logger is set to DEBUG via --verbose.

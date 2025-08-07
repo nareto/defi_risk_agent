@@ -143,30 +143,31 @@ def main(
         )
         final_state = None
 
-        with console.status(
-            f"[bold green]Agent is running. Thread: {thread_id}..."
-        ) as status:
-            for state_dict in app.stream(init, cfg, stream_mode="values"):
-                snapshot = AgentState(**state_dict)
+        # with console.status(
+        #     f"[bold green]Agent is running. Thread: {thread_id}..."
+        # ) as status:
+        for state_dict in app.stream(init, cfg, stream_mode="values"):
+            snapshot = AgentState(**state_dict)
 
-                if snapshot.messages:
-                    msg = snapshot.messages[-1]
-                    if hasattr(msg, "tool_calls") and msg.tool_calls:
-                        logger.debug(f"🤖 AI -> Tools: {str(msg.tool_calls)[:500]} ...")
-                    else:
-                        logger.debug(f"🛠️ Tools -> AI: {str(msg.content)[:500]} ...")
+            # if snapshot.messages:
+                # msg = snapshot.messages[-1]
+                # if hasattr(msg, "tool_calls") and msg.tool_calls:
+                #     logger.debug(f"🤖 AI -> Tools: {str(msg.tool_calls)}")
+                # else:
+                #     logger.debug(f"🛠️ Tools -> AI: {str(msg.content)}")
 
-                if snapshot.metrics:
-                    last_metric = snapshot.metrics[-1]
-                    # if isinstance(last_metric, dict):
-                    metric_repr = last_metric.get("metric_name", str(last_metric)[:120])
-                    # else:
-                    #     metric_repr = last_metric.__class__.__name__
-                    logger.debug(f"📊 Metrics: {metric_repr}")
-                final_state = snapshot
-                status.update(
-                    f"[bold green]Turn {snapshot.turn_count}: Processing...[/bold green]"
-                )
+            if snapshot.metrics:
+                last_metric = snapshot.metrics[-1]
+                # if isinstance(last_metric, dict):
+                metric_repr = last_metric.get("metric_name", str(last_metric)[:120])
+                # else:
+                #     metric_repr = last_metric.__class__.__name__
+                logger.debug(f"📊 Metrics: {metric_repr}")
+            final_state = snapshot
+            # logger.info(f"Turn {snapshot.turn_count}")
+            # status.update(
+            #     f"[bold green]Turn {snapshot.turn_count}: Processing...[/bold green]"
+            # )
         if final_state:
             console.print(
                 Panel(

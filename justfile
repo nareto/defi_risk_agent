@@ -8,6 +8,9 @@ run address:
 runv address:
     poetry run python -m src.cli -v {{ address }}
 
+t:
+    just run 0xb1adceddb2941033a090dd166a462fe1c2029484
+
 runl address:
     poetry run python -m src.cli -v {{ address }} > runs_output/{{ address }}.$(date -u +"%Y-%m-%dT%H-%M-%SZ").log 2>&1
 
