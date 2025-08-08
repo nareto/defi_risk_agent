@@ -127,11 +127,11 @@ export default function HomePage() {
 
       {/* Status / result card */}
       {(loading || riskScore !== null) && (
-        <div className="rounded border p-6 shadow bg-white flex flex-col items-center justify-center space-y-4 min-h-60">
+        <div className="rounded border p-6 shadow bg-white flex flex-col items-center justify-center space-y-4 min-h-[15rem]">
           {loading && (
             <>
               <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-gray-900" />
-              <p className="text-center text-sm text-gray-700 min-h-6">
+              <p className="text-center text-sm text-gray-700 min-h-[1.5rem]">
                 {latestMsg || "Thinking…"}
               </p>
             </>

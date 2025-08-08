@@ -147,7 +147,8 @@ def _start_job(
             await queue.put({"type": "done"})
         except Exception as exc:
             logger.exception("Job %s failed", task_id)
-            await queue.put({"type": "error", "message": str(exc)})
+            # Send a JSON object with the error message
+            await queue.put({"type": "error", "message": json.dumps({"error": str(exc)})})
         finally:
             tasks[task_id]["done"] = True
 
@@ -185,6 +186,7 @@ async def _event_generator(task_id: str) -> AsyncGenerator[str, None]:
             yield "event: done\n\n"
             break
         elif message["type"] == "error":
+            # The message is already a JSON string, so no need to re-wrap
             yield f"event: error\ndata: {message['message']}\n\n"
             break
         

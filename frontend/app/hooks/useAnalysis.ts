@@ -87,7 +87,16 @@ export function useAnalysis() {
 
                 es.addEventListener("error", (e) => {
                     console.error("[useAnalysis] error", e);
-                    appendLog("Error: " + (e as MessageEvent).data);
+                    let errorMsg = "An unknown error occurred";
+                    if (e instanceof MessageEvent && e.data) {
+                        try {
+                            const parsed = JSON.parse(e.data);
+                            errorMsg = parsed.error || e.data;
+                        } catch (err) {
+                            errorMsg = e.data;
+                        }
+                    }
+                    appendLog(`Error: ${errorMsg}`);
                     setLoading(false);
                     setLatestMsg("Error");
                     es.close();
