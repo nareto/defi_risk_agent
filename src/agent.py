@@ -116,7 +116,7 @@ class AgentState(BaseModel):
     # (re)starts.
     llm_with_tools: Any = Field(default=None, exclude=True)
     # Store model configuration so we can rebuild the LLM after checkpoint reloads
-    model_name: str = "gpt-4o"
+    model_name: str
     max_token_per_prompt: int = 100000
     max_token_per_msg: Optional[int] = 20000
     temperature: float = 0.0

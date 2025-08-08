@@ -1,6 +1,7 @@
 import datetime as dt
 # import decimal
 
+from httpx import HTTPError
 import requests
 from langchain_core.tools import tool
 from src.utils import rate_limit
@@ -124,7 +125,7 @@ def api_coingecko_contract(address: str, chain: str = "ethereum"):
     # return r.json()
     # r.raise_for_status()
     data = r.json()
-
+    if 'error' in data and data['error'] == 'coin not found': raise HTTPError("Contract not present on coingecko")
     # market_cap = decimal.Decimal(data["market_data"]["market_cap"]["usd"])
     market_cap = data["market_data"]["market_cap"]["usd"]
     rank = data["market_cap_rank"]  # may be None for tiny tokens
