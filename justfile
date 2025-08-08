@@ -8,8 +8,9 @@ run address:
 runv address:
     poetry run python -m src.cli -v {{ address }}
 
+#test vitalik.eth:
 t:
-    just run 0xb1adceddb2941033a090dd166a462fe1c2029484
+    just run 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
 
 runl address:
     poetry run python -m src.cli -v {{ address }} > runs_output/{{ address }}.$(date -u +"%Y-%m-%dT%H-%M-%SZ").log 2>&1
