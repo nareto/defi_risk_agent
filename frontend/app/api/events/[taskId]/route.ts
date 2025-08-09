@@ -1,42 +1,44 @@
-// /app/api/events/[taskId]/route.ts
-// Proxy SSE stream from backend to client
-// Correct signature for App Router route handler
-export const runtime = 'nodejs';          // makes “process.env” legal
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-export async function GET(_req: Request, { params }: { params: { taskId: string } }) {
-  const { taskId } = params;
-  const backendBase = process.env.BACKEND_URL ?? "http://backend:8000";
+import type { NextRequest } from 'next/server';
+
+export async function GET(_req: NextRequest, { params }: { params: Promise<any> }) {
+  const record: any = await params;
+  const taskId: string | undefined = record?.taskId;
+  if (!taskId) {
+    return new Response('Missing taskId', { status: 400 });
+  }
+  if (!taskId) {
+    return new Response('Missing taskId', { status: 400 });
+  }
+
+  const backendBase = process.env.BACKEND_URL ?? 'http://backend:8000';
   const backendUrl = `${backendBase}/events/${taskId}`;
-  console.log(`[api/events] Proxying SSE for task ${taskId} to ${backendUrl}`);
 
-  const response = await fetch(backendUrl);
-
-  if (!response.body) {
-    return new Response('No response body from backend', { status: 500 });
+  const response = await fetch(backendUrl, {
+    headers: { Accept: 'text/event-stream' },
+    cache: 'no-store',
+  });
+  if (!response.ok || !response.body) {
+    const text = await response.text().catch(() => '');
+    return new Response(text || 'Upstream error', { status: response.status || 502 });
   }
 
   const stream = new ReadableStream({
     async start(controller) {
       const reader = response.body!.getReader();
-      const decoder = new TextDecoder();
-
-      function push() {
-        reader.read().then(({ done, value }) => {
-          if (done) {
-            console.log(`[api/events] Stream for task ${taskId} finished.`);
-            controller.close();
-            return;
-          }
-          const chunk = decoder.decode(value, { stream: true });
-          console.log(`[api/events] Received chunk for task ${taskId}:`, chunk.trim());
+      try {
+        for (; ;) {
+          const { done, value } = await reader.read();
+          if (done) break;
           controller.enqueue(value);
-          push();
-        }).catch(err => {
-          console.error(`[api/events] Error reading stream for task ${taskId}:`, err);
-          controller.error(err);
-        })
+        }
+      } catch (err) {
+        controller.error(err);
+      } finally {
+        controller.close();
       }
-      push();
     },
   });
 
