@@ -107,6 +107,9 @@ export default function HomePage() {
   /* ---------------- Render ---------------- */
   return (
     <section className="space-y-8 max-w-3xl mx-auto p-4">
+      <div className="flex items-end gap-2">
+        <h1 className="text-4xl font-bold text-gray-800">Defi Risk Analyzer</h1>
+      </div>
       {/* Address input */}
       <div className="flex items-end gap-2">
         <input
