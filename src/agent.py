@@ -3,7 +3,7 @@ import json
 import logging
 from pprint import pformat
 from string import Template
-from typing import Any, Callable, Dict, List, Literal, Union
+from typing import Any, Callable, Dict, List, Optional
 
 import instructor
 from dotenv import load_dotenv
@@ -21,31 +21,29 @@ from langchain_core.messages import (
 )
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
-from langgraph.graph import  StateGraph
+from langgraph.graph import StateGraph
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from src.agent_utils import StopNow
-from src.utils import get_prompts_dir
+from src.utils import count_tokens, get_prompts_dir, truncate_to_n_tokens
 
 logger = logging.getLogger("defi_agent")
 
 
-try:
-    from langgraph.prebuilt.tool_executor import ToolExecutor  # type: ignore
-except ImportError:  # older version / missing module
+class ToolExecutor:  # type: ignore
+    """Tiny substitute that supports .invoke()."""
 
-    class ToolExecutor:  # type: ignore
-        """Tiny substitute that supports .invoke()."""
+    def __init__(self, tools: List[Callable]):
+        self._tools = {t.name: t for t in tools}
 
-        def __init__(self, tools: List[Callable]):
-            self._tools = {t.name: t for t in tools}
-
-        def invoke(self, call_spec: Dict[str, Any]):
-            name, args = call_spec["name"], call_spec.get("arguments", {})
-            tool = self._tools[name]
-            if isinstance(tool, BaseTool):  # type: ignore
-                return tool.invoke(args)
-            return tool(**args)
+    def invoke(self, call_spec: Dict[str, Any]):
+        name, args = call_spec["name"], call_spec.get("arguments", {})
+        tool = self._tools[name]
+        if isinstance(tool, BaseTool):  # type: ignore
+            out = tool.invoke(args)
+        else:
+            out = tool(**args)
+        return out
 
 
 # TOOLS
@@ -118,7 +116,9 @@ class AgentState(BaseModel):
     # (re)starts.
     llm_with_tools: Any = Field(default=None, exclude=True)
     # Store model configuration so we can rebuild the LLM after checkpoint reloads
-    model_name: str = "gpt-4o"
+    model_name: str
+    max_token_per_prompt: int = 100000
+    max_token_per_msg: Optional[int] = 20000
     temperature: float = 0.0
 
     class Config:
@@ -153,27 +153,56 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
 
     messages = messages_to_keep
 
+    def truncate_all_messages_equally(messages: List[BaseMessage]) -> List[str]:
+        tot_length = sum(
+            [count_tokens(text=str(msg), model=state.model_name) for msg in messages]
+        )
+        max_msg_tokens = int(state.max_token_per_prompt / len(messages))
+        out = [
+            truncate_to_n_tokens(
+                text=str(msg), model_name=state.model_name, max_tokens=max_msg_tokens
+            )
+        ]
+        return out
+
+    def truncate_long_messages(messages: List[BaseMessage]) -> List[str]:
+        out = []
+        for msg in messages:
+            if state.max_token_per_msg is None:
+                out.append(msg)
+                continue
+            ntokens = count_tokens(text=str(msg), model=state.model_name)
+            new_msg = str(msg)
+            if ntokens > state.max_token_per_msg:
+                new_msg = truncate_to_n_tokens(
+                    text=str(msg),
+                    model_name=state.model_name,
+                    max_tokens=state.max_token_per_msg,
+                )
+            out.append(new_msg)
+        return out
+
     if not state.messages:
         convo = [
             SystemMessage(system_prompt),
             HumanMessage(content=input_prompt),
         ]
     else:
-        convo = [SystemMessage(system_prompt)] + messages
+        # convo = [SystemMessage(system_prompt)] + messages
+        # convo = [SystemMessage(system_prompt)] + truncate_all_messages_equally(messages)
+        convo = [SystemMessage(system_prompt)] + truncate_long_messages(messages)
+
+    convo_tokens = sum(
+        [count_tokens(text=str(msg), model=state.model_name) for msg in convo]
+    )
 
     logger.info(
-        f"Sending {len(convo)} messages to LLM",
+        f"Invoking LLM with {len(convo)} messages ({convo_tokens} tokens)",
     )
-    # The [m.content[:80] for m in convo] part is for brevity in logs
-    logger.debug("LLM→ messages: %s ...", [m.content[:200] for m in convo[-3:]])
+    # logger.info(f"Last 3 messages: %s", [m.content for m in convo[-3:]])
 
-    # If we resumed from an *old* checkpoint, llm_with_tools may have been
-    # deserialized as a plain dict and therefore has no `.invoke()` method.
-    # Re-create it on the fly when that happens.
-    llm_bt = state.llm_with_tools
+    llm_wt = state.llm_with_tools
 
-    # If llm_bt is missing or is a plain dict (as happens after JSON deserialisation)
-    # we need to reconstruct it.
     def _needs_rebuild(obj):
         """Return True if obj is clearly not a working RunnableLLM."""
         if obj is None:
@@ -190,7 +219,9 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
             return True
         return False
 
-    if _needs_rebuild(llm_bt):
+    # If llm_wt is missing or is a plain dict (as happens after JSON deserialisation)
+    # we need to reconstruct it.
+    if _needs_rebuild(llm_wt):
         logger.debug("Re-creating llm_with_tools after checkpoint load")
         from langchain_openai import ChatOpenAI  # delayed import
 
@@ -199,14 +230,14 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
         llm_core = ChatOpenAI(
             model=model_name, temperature=temperature, streaming=False
         )
-        llm_bt = llm_core.bind_tools(TOOLS)
-        # Persist rebuilt instance and configuration for next steps
-        state.llm_with_tools = llm_bt
+        llm_wt = llm_core.bind_tools(TOOLS)
+        state.llm_with_tools = llm_wt
 
-    raw_ai_msg: AIMessage = llm_bt.invoke(convo)
-    logger.info("LLM← tool_calls: %s", raw_ai_msg.tool_calls)
+    raw_ai_msg: AIMessage = llm_wt.invoke(convo)
+    logger.info(
+        f"LLM returned {len(raw_ai_msg.tool_calls)} tool calls {raw_ai_msg.tool_calls}"
+    )
 
-    # Create a new AIMessage with explicit tool_calls to avoid compatibility issues
     ai_msg = AIMessage(
         content=raw_ai_msg.content,
         tool_calls=raw_ai_msg.tool_calls or [],
@@ -216,7 +247,7 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
     return {
         "messages": state.messages + [ai_msg],
         "turn_count": state.turn_count + 1,
-        "llm_with_tools": llm_bt,  # persist rebuilt instance for next steps
+        "llm_with_tools": llm_wt,
     }
 
 
@@ -231,8 +262,8 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
         logger.info("Executing %s args=%s", name, args)
         try:
             result = tool_executor.invoke({"name": name, "arguments": args})
-            logger.info("→ %s ...", pformat(result)[:500])
-            logger.info(f"{name} ok")
+            ntokens = count_tokens(text=str(result), model=state.model_name)
+            logger.info(f"Tool {name} returned result ({ntokens} tokens): {result}")
             if isinstance(result, StopNow):
                 out_messages.append(
                     ToolMessage(
@@ -299,6 +330,7 @@ def decide_next(state: AgentState) -> str:
 
     logger.info("No more tool calls, finalizing.")
     return "finalize"
+
 
 class RiskFinalOutput(BaseModel):
     """Container for the final risk assessment"""
