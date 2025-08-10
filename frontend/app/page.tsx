@@ -111,7 +111,13 @@ export default function HomePage() {
         <h1 className="text-4xl font-bold text-gray-800">Defi Risk Analyzer</h1>
       </div>
       {/* Address input */}
-      <div className="flex items-end gap-2">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleAnalyze();
+        }}
+        className="flex items-end gap-2"
+      >
         <input
           className="flex-1 rounded border px-3 py-2"
           placeholder="0x… address"
@@ -120,13 +126,13 @@ export default function HomePage() {
           disabled={loading}
         />
         <button
-          onClick={handleAnalyze}
+          type="submit"
           disabled={loading}
           className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
         >
           {loading ? "Analyzing…" : "Analyze"}
         </button>
-      </div>
+      </form>
 
       {/* Status / result card */}
       {(loading || riskScore !== null) && (
