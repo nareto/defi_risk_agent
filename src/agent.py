@@ -274,11 +274,33 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
             is_metric = any(isinstance(result, mo) for mo in METRIC_OUTPUTS)
             if is_metric:
                 # Persist as plain dict for easy checkpoint serialisation
-                metric_dict = result.model_dump()
+                # metric_dict = result.model_dump()
+                # new_metrics.append(metric_dict)
+                # out_messages.append(
+                #     ToolMessage(content=json.dumps(metric_dict), tool_call_id=call_id)
+                # )
+                raw_metric = result.model_dump()
+                # Normalise metric into a generic value 0–100 for frontend consumption
+                value: float | None = None
+                if "percentage_exposure" in raw_metric and raw_metric["percentage_exposure"] is not None:
+                    value = float(raw_metric["percentage_exposure"])
+                elif "churn_rate_percentage" in raw_metric and raw_metric["churn_rate_percentage"] is not None:
+                    value = float(raw_metric["churn_rate_percentage"])
+                elif "hhi_score" in raw_metric and raw_metric["hhi_score"] is not None:
+                    value = float(raw_metric["hhi_score"]) * 100.0  # convert 0–1 to 0–100
+                # Build simplified metric dict with a guaranteed `value` field
+                metric_dict = {
+                    "metric_name": raw_metric.get("metric_name", "Unknown Metric"),
+                    "value": value if value is not None else 0.0,
+                    "description": raw_metric.get("description", ""),
+                    # Preserve original raw fields for reference/debugging
+                    **raw_metric,
+                }
                 new_metrics.append(metric_dict)
                 out_messages.append(
                     ToolMessage(content=json.dumps(metric_dict), tool_call_id=call_id)
                 )
+
             else:
                 out_messages.append(
                     ToolMessage(content=json.dumps(result), tool_call_id=call_id)

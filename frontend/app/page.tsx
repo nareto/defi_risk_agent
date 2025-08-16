@@ -7,9 +7,9 @@ import { useAnalysis } from "./hooks/useAnalysis";
 // ---------- Types ----------
 interface Metric {
   metric_name: string;
-  percentage_exposure?: number;
+  value: number;
   description?: string;
-  hhi_score?: number;
+  [key: string]: unknown; // allow extra unseen fields
 }
 
 // ---------- Visual Components ----------
@@ -48,14 +48,8 @@ const Gauge = ({ value }: { value: number }) => {
 
 const BarChart = ({ metrics }: { metrics: Metric[] }) => {
   const chartData = metrics
-    .map((m) => ({
-      name: m.metric_name,
-      value:
-        m.percentage_exposure !== undefined
-          ? m.percentage_exposure
-          : (m.hhi_score || 0) * 100,
-    }))
-    .filter((d) => d.value > 0);
+    .filter((m) => m.value > 0)
+    .map((m) => ({ name: m.metric_name, value: m.value }));
 
   if (chartData.length === 0) return null;
 

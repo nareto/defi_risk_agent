@@ -3,9 +3,10 @@ import { useEffect, useRef, useState } from "react";
 
 interface Metric {
     metric_name: string;
-    percentage_exposure?: number;
+    value: number; // Normalised 0–100 value for display
     description?: string;
-    hhi_score?: number;
+    // backend may include extra fields which we ignore
+    [key: string]: unknown;
 }
 
 interface ProgressPayload {

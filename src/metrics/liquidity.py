@@ -13,10 +13,15 @@ class ExoticAssetExposureInput(BaseModel):
     assets: List[ExoticAsset]
 
 
-class ExoticAssetExposureOutput(BaseModel):
-    metric_name: str = "Exotic & Unproven Asset Exposure"
+from .base import BaseMetricOutput
+
+class ExoticAssetExposureOutput(BaseMetricOutput):
     percentage_exposure: float
-    description: str
+
+    @property
+    def value(self) -> float: 
+        return self.percentage_exposure
+
 
 
 class PortfolioConcentrationInput(BaseModel):
