@@ -76,15 +76,15 @@ TOOLS = [
     api_moralis_wallet_portfolio,
     metric_calculate_exotic_asset_exposure,
     metric_calculate_portfolio_concentration,
-    # metric_calculate_low_tvl_protocol_concentration,
-    # metric_calculate_portfolio_churn_rate,
-    # metric_calculate_bridged_asset_exposure,
-    # util_stop_now,
-    # util_wait_five_seconds,
-    # util_math_multiply_numbers,
-    # util_math_sum_numbers,
-    # util_math_divide_numbers,
-    # util_math_subtract_numbers,
+    metric_calculate_low_tvl_protocol_concentration,
+    metric_calculate_portfolio_churn_rate,
+    metric_calculate_bridged_asset_exposure,
+    util_stop_now,
+    util_wait_five_seconds,
+    util_math_multiply_numbers,
+    util_math_sum_numbers,
+    util_math_divide_numbers,
+    util_math_subtract_numbers,
 ]
 
 METRIC_OUTPUTS = [
@@ -275,25 +275,9 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
             # is_metric = any(isinstance(result, mo) for mo in METRIC_OUTPUTS)
             is_metric = isinstance(result, BaseMetricOutput)
             if is_metric:
-                # Persist as plain dict for easy checkpoint serialisation
-                # metric_dict = result.model_dump()
-                # new_metrics.append(metric_dict)
-                # out_messages.append(
-                #     ToolMessage(content=json.dumps(metric_dict), tool_call_id=call_id)
-                # )
-                # raw_metric = result.model_dump()
-                # Build simplified metric dict with a guaranteed `value` field
-                # metric_dict = {
-                #     "metric_name": raw_metric.get("metric_name", "Unknown Metric"),
-                #     "value": value if value is not None else 0.0,
-                #     "description": raw_metric.get("description", ""),
-                #     # Preserve original raw fields for reference/debugging
-                #     **raw_metric,
-                # }
-
                 metric_dict = {
                     "metric_name": result.metric_name,
-                    "description": result.description,
+                    "description": result.explanation,
                     "value": result.value,
                 }
                 new_metrics.append(metric_dict)

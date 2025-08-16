@@ -3,6 +3,7 @@ import time
 import datetime as dt
 from pydantic import BaseModel
 from typing import Annotated  
+from src.utils import str_to_float
 
 class StopNow(BaseModel):
     pass
@@ -21,24 +22,23 @@ def util_wait_five_seconds():
 @tool
 def util_math_multiply_numbers(a: str, b: str) -> str:
     """Multiply two floating point numbers in string format (like '3.14' and '2.0'). Return a floating point in string format"""
-    return str(float(a) * float(b))
+    return str(str_to_float(a) * str_to_float(b))
 
 @tool
 def util_math_sum_numbers(a: str, b: str) -> str:
     """Sum two floating point numbers in string format (like '3.14' and '2.0'). Return a floating point in string format"""
-    return str(float(a) + float(b))
+    return str(str_to_float(a) + str_to_float(b))
 
 @tool
 def util_math_divide_numbers(a: str, b: str) -> str:
     """Divide two floating point numbers in string format (like '3.14' and '2.0'). Return a floating point in string format"""
-    b_float = float(b)
+    b_float = str_to_float(b)
     if b_float == 0:
         return "Error: Division by zero"
-    return str(float(a) / b_float)
+    return str(str_to_float(a) / b_float)
 
 
 @tool
 def util_math_subtract_numbers(a: str, b: str) -> str:
     """Subtract two floating point numbers in string format (like '3.14' and '2.0'). Return a floating point in string format"""
-    return str(float(a) - float(b))
-
+    return str(str_to_float(a) - str_to_float(b))

@@ -2,6 +2,8 @@ from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 from typing import List
 
+from src.metrics.base import BaseMetricOutput
+
 class BridgedAsset(BaseModel):
     """Represents a single asset and its bridged status."""
     symbol: str
@@ -12,11 +14,15 @@ class BridgedAssetExposureInput(BaseModel):
     """Input for the Bridged Asset Exposure metric."""
     assets: List[BridgedAsset]
 
-class BridgedAssetExposureOutput(BaseModel):
+class BridgedAssetExposureOutput(BaseMetricOutput):
     """Output for the Bridged Asset Exposure metric."""
     metric_name: str = "Bridged Asset Exposure"
     percentage_exposure: float
-    description: str
+
+
+    @property
+    def value(self) -> float:
+        return self.percentage_exposure
 
 @tool
 def metric_calculate_bridged_asset_exposure(
@@ -29,16 +35,16 @@ def metric_calculate_bridged_asset_exposure(
     if total_value == 0:
         return BridgedAssetExposureOutput(
             percentage_exposure=0,
-            description="Wallet has no assets."
+            explanation="Wallet has no assets."
         )
 
     bridged_value = sum(a.usd_value for a in data.assets if a.is_bridged)
 
     percentage = (bridged_value / total_value) * 100 if total_value > 0 else 0
     
-    description = f"{percentage:.2f}% of the portfolio's value is held in bridged (non-native) assets."
+    explanation = f"{percentage:.2f}% of the portfolio's value is held in bridged (non-native) assets."
 
     return BridgedAssetExposureOutput(
         percentage_exposure=percentage,
-        description=description,
+        explanation=explanation,
     )

@@ -58,6 +58,42 @@ def rate_limit(max_calls: int, period_seconds: int):
     return decorator
 
 
+def str_to_float(value: str) -> float:
+    """
+    Convert a string representing a number into a Python float.
+
+    Supported formats
+    -----------------
+    • Standard decimal floats: "123.45", "-0.001"
+    • Scientific notation with either ``e`` or Fortran-style ``d`` exponent markers:
+      "1.2e3", "3.4d05", "-8.1d-2"
+    • Hexadecimal integers, with or without the ``0x`` prefix (case-insensitive):
+      "0x1a", "1a", "152d02c7e14af6800000"
+
+    If the string cannot be interpreted, ``ValueError`` is raised.
+    """
+    import re
+
+    s = value.strip().lower()
+
+    # Handle Fortran-style exponent (replace the first standalone 'd' with 'e')
+    if "d" in s and "e" not in s:
+        # Convert forms like "1.23d04" -> "1.23e04"
+        s = re.sub(r"([0-9])d([+-]?[0-9]+)", r"\1e\2", s)
+
+    # Attempt direct float conversion
+    try:
+        return float(s)
+    except ValueError:
+        pass
+
+    # Attempt hexadecimal integer interpretation
+    if re.fullmatch(r"(0x)?[0-9a-f]+", s):
+        return float(int(s, 16))
+
+    raise ValueError(f"Cannot convert '{value}' to float")
+
+
 def count_tokens(text: str, model: str) -> int:
     encoding = tiktoken.encoding_for_model(model)
     tokens = encoding.encode(text)

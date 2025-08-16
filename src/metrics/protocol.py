@@ -2,6 +2,8 @@ from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 from typing import List
 
+from src.metrics.base import BaseMetricOutput
+
 class ProtocolPosition(BaseModel):
     """Represents a single position in a DeFi protocol."""
     protocol_name: str
@@ -13,11 +15,14 @@ class LowTvlProtocolInput(BaseModel):
     positions: List[ProtocolPosition]
     tvl_threshold_usd: float = Field(default=5_000_000, description="The TVL threshold below which a protocol is considered low-TVL.")
 
-class LowTvlProtocolOutput(BaseModel):
-    """Output for the Low-TVL Protocol Concentration metric."""
+class LowTvlProtocolOutput(BaseMetricOutput):
     metric_name: str = "Low-TVL Protocol Concentration"
+
     percentage_exposure: float
-    description: str
+
+    @property
+    def value(self) -> float: 
+        return self.percentage_exposure
 
 @tool
 def metric_calculate_low_tvl_protocol_concentration(
@@ -30,7 +35,7 @@ def metric_calculate_low_tvl_protocol_concentration(
     if total_value == 0:
         return LowTvlProtocolOutput(
             percentage_exposure=0,
-            description="Wallet has no assets in DeFi protocols."
+            explanation="Wallet has no assets in DeFi protocols."
         )
 
     low_tvl_value = sum(
@@ -39,12 +44,12 @@ def metric_calculate_low_tvl_protocol_concentration(
 
     percentage = (low_tvl_value / total_value) * 100 if total_value > 0 else 0
     
-    description = (
+    explanation = (
         f"{percentage:.2f}% of assets are in protocols with less than "
         f"${data.tvl_threshold_usd:,.0f} TVL."
     )
 
     return LowTvlProtocolOutput(
         percentage_exposure=percentage,
-        description=description,
+        explanation=explanation,
     )
