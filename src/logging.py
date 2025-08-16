@@ -65,8 +65,8 @@ def configure_logging(fmt: str = "human", *, level: int = logging.INFO) -> None:
     for noisy_logger in (
         "httpx",  # HTTP client used by OpenAI/other providers
         "httpcore",  # lower-level transport layer used by httpx
-        "openai",  # OpenAI Python SDK
-        "openai._base_client",  # OpenAI internal client traces
+        # "openai",  # OpenAI Python SDK
+        # "openai._base_client",  # OpenAI internal client traces
         "instructor"
     ):
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)

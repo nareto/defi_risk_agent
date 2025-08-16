@@ -76,15 +76,15 @@ TOOLS = [
     api_moralis_wallet_portfolio,
     metric_calculate_exotic_asset_exposure,
     metric_calculate_portfolio_concentration,
-    metric_calculate_low_tvl_protocol_concentration,
-    metric_calculate_portfolio_churn_rate,
-    metric_calculate_bridged_asset_exposure,
-    util_stop_now,
-    util_wait_five_seconds,
-    util_math_multiply_numbers,
-    util_math_sum_numbers,
-    util_math_divide_numbers,
-    util_math_subtract_numbers,
+    # metric_calculate_low_tvl_protocol_concentration,
+    # metric_calculate_portfolio_churn_rate,
+    # metric_calculate_bridged_asset_exposure,
+    # util_stop_now,
+    # util_wait_five_seconds,
+    # util_math_multiply_numbers,
+    # util_math_sum_numbers,
+    # util_math_divide_numbers,
+    # util_math_subtract_numbers,
 ]
 
 METRIC_OUTPUTS = [
@@ -233,6 +233,7 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
         llm_wt = llm_core.bind_tools(TOOLS)
         state.llm_with_tools = llm_wt
 
+    logger.debug(f"Calling LLM with input:\n{convo}")
     raw_ai_msg: AIMessage = llm_wt.invoke(convo)
     logger.info(
         f"LLM returned {len(raw_ai_msg.tool_calls)} tool calls {raw_ai_msg.tool_calls}"
@@ -271,7 +272,8 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
                     )
                 )
                 break
-            is_metric = any(isinstance(result, mo) for mo in METRIC_OUTPUTS)
+            # is_metric = any(isinstance(result, mo) for mo in METRIC_OUTPUTS)
+            is_metric = isinstance(result, BaseMetricOutput)
             if is_metric:
                 # Persist as plain dict for easy checkpoint serialisation
                 # metric_dict = result.model_dump()
@@ -279,22 +281,20 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
                 # out_messages.append(
                 #     ToolMessage(content=json.dumps(metric_dict), tool_call_id=call_id)
                 # )
-                raw_metric = result.model_dump()
-                # Normalise metric into a generic value 0–100 for frontend consumption
-                value: float | None = None
-                if "percentage_exposure" in raw_metric and raw_metric["percentage_exposure"] is not None:
-                    value = float(raw_metric["percentage_exposure"])
-                elif "churn_rate_percentage" in raw_metric and raw_metric["churn_rate_percentage"] is not None:
-                    value = float(raw_metric["churn_rate_percentage"])
-                elif "hhi_score" in raw_metric and raw_metric["hhi_score"] is not None:
-                    value = float(raw_metric["hhi_score"]) * 100.0  # convert 0–1 to 0–100
+                # raw_metric = result.model_dump()
                 # Build simplified metric dict with a guaranteed `value` field
+                # metric_dict = {
+                #     "metric_name": raw_metric.get("metric_name", "Unknown Metric"),
+                #     "value": value if value is not None else 0.0,
+                #     "description": raw_metric.get("description", ""),
+                #     # Preserve original raw fields for reference/debugging
+                #     **raw_metric,
+                # }
+
                 metric_dict = {
-                    "metric_name": raw_metric.get("metric_name", "Unknown Metric"),
-                    "value": value if value is not None else 0.0,
-                    "description": raw_metric.get("description", ""),
-                    # Preserve original raw fields for reference/debugging
-                    **raw_metric,
+                    "metric_name": result.metric_name,
+                    "description": result.description,
+                    "value": result.value,
                 }
                 new_metrics.append(metric_dict)
                 out_messages.append(
