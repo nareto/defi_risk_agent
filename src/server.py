@@ -8,6 +8,7 @@ import json
 from typing import AsyncGenerator, Dict, Any, Optional
 from contextlib import asynccontextmanager
 import os
+from langchain_core.messages import AIMessage
 
 from psycopg_pool import AsyncConnectionPool
 from psycopg.rows import dict_row
@@ -24,8 +25,12 @@ logger = logging.getLogger("defi_agent")
 configure_logging("human")
 
 
-RAW_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:15432/defi")
-DB_URL = RAW_URL.replace("postgresql+asyncpg://", "postgresql://", 1)  # strip SQLAlchemy suffix
+RAW_URL = os.getenv(
+    "DATABASE_URL", "postgresql://postgres:postgres@localhost:15432/defi"
+)
+DB_URL = RAW_URL.replace(
+    "postgresql+asyncpg://", "postgresql://", 1
+)  # strip SQLAlchemy suffix
 
 pool = AsyncConnectionPool(
     DB_URL,
@@ -108,18 +113,46 @@ def _start_job(
                 try:
                     msgs = state_dict.get("messages", [])
                     if msgs:
-                        last_msg = msgs[-1]
-                        # Depending on (de)serialisation round-trips, the message can
-                        # either be a dict (after JSON round-trip) or an actual
-                        # BaseMessage instance.  Handle both.
-                        if isinstance(last_msg, dict):
-                            tc_list = last_msg.get("tool_calls")
-                            reasoning = last_msg.get("content")
-                        else:
-                            tc_list = getattr(last_msg, "tool_calls", None)
-                            reasoning = getattr(last_msg, "content", None)
+                        # Walk backwards to find the most recent AI message and use only its content
+                        tc_list = None
+                        reasoning = None
+                        for m in reversed(msgs):
+                            if isinstance(m, dict):
+                                # Distinguish AI vs Tool messages in dict form
+                                is_tool = (
+                                    bool(m.get("tool_call_id"))
+                                    or m.get("type") == "tool"
+                                    or m.get("role") == "tool"
+                                )
+                                is_ai = (
+                                    (m.get("type") == "ai")
+                                    or (m.get("role") in ("assistant", "ai"))
+                                    or (
+                                        "tool_calls" in m
+                                        and m.get("tool_calls") is not None
+                                    )
+                                )
+                                if is_ai and not is_tool:
+                                    tc_list = m.get("tool_calls")
+                                    reasoning = m.get("content")
+                                    break
+                            else:
+                                # BaseMessage instance form
+                                if isinstance(m, AIMessage):
+                                    tc_list = getattr(m, "tool_calls", None)
+                                    reasoning = getattr(m, "content", None)
+                                    break
                         if tc_list:
-                            next_tools = [tc.get("name") for tc in tc_list if tc]
+                            # Handle dict-style tool call specs while ensuring type safety
+                            tmp_tools: list[str] = []
+                            for tc in tc_list:
+                                if isinstance(tc, dict):
+                                    name = tc.get("name")
+                                    if isinstance(name, str):
+                                        tmp_tools.append(name)
+                            next_tools = tmp_tools
+                        if (reasoning is None or len(reasoning) == 0) and tc_list:
+                            reasoning = "(no reasoning)"
                 except Exception:
                     # Don't let telemetry collection break the main loop.
                     pass
@@ -140,7 +173,11 @@ def _start_job(
                         # The last message added by node_finalize contains the JSON string
                         last_msg = messages[-1]
                         # Depending on serialization, it can be a dict or BaseMessage-like object
-                        content = last_msg.get("content") if isinstance(last_msg, dict) else getattr(last_msg, "content", None)
+                        content = (
+                            last_msg.get("content")
+                            if isinstance(last_msg, dict)
+                            else getattr(last_msg, "content", None)
+                        )
                         if content:
                             risk_json = json.loads(content)
                             await queue.put({"type": "result", "payload": risk_json})
@@ -151,7 +188,9 @@ def _start_job(
         except Exception as exc:
             logger.exception("Job %s failed", task_id)
             # Send a JSON object with the error message
-            await queue.put({"type": "error", "message": json.dumps({"error": str(exc)})})
+            await queue.put(
+                {"type": "error", "message": json.dumps({"error": str(exc)})}
+            )
         finally:
             tasks[task_id]["done"] = True
 
@@ -192,7 +231,7 @@ async def _event_generator(task_id: str) -> AsyncGenerator[str, None]:
             # The message is already a JSON string, so no need to re-wrap
             yield f"event: error\ndata: {message['message']}\n\n"
             break
-        
+
         # Force a flush of the stream to avoid buffering issues
         await asyncio.sleep(0.01)
 
@@ -205,6 +244,7 @@ async def events(task_id: str, request: Request):
                 # Client disconnected?
                 if await request.is_disconnected():
                     break
+                logging.debug(f"/events yielding: {chunk}")
                 yield chunk
         finally:
             # Clean up finished tasks

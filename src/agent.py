@@ -55,6 +55,7 @@ from src.metrics.liquidity import *
 from src.metrics.protocol import *
 from src.metrics.systemic import *
 from src.metrics.user import *
+from src.metrics.base import BaseMetricOutput
 
 # api calls
 from src.providers.alchemy import *
@@ -236,7 +237,7 @@ def node_llm(state: AgentState) -> Dict[str, Any]:
     logger.debug(f"Calling LLM with input:\n{convo}")
     raw_ai_msg: AIMessage = llm_wt.invoke(convo)
     logger.info(
-        f"LLM returned {len(raw_ai_msg.tool_calls)} tool calls {raw_ai_msg.tool_calls}"
+        f"LLM returned {len(raw_ai_msg.tool_calls)} tool calls {raw_ai_msg.tool_calls} and content: \"{raw_ai_msg.content}\""
     )
 
     ai_msg = AIMessage(
@@ -277,8 +278,9 @@ def node_tools(state: AgentState) -> Dict[str, Any]:
             if is_metric:
                 metric_dict = {
                     "metric_name": result.metric_name,
-                    "description": result.explanation,
-                    "value": result.value,
+                    "metric_description": result.metric_description,
+                    "value": result.value,  
+                    "value_explanation": result.value_explanation,
                 }
                 new_metrics.append(metric_dict)
                 out_messages.append(

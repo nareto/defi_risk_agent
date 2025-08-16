@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from "react";
 
 interface Metric {
     metric_name: string;
-    value: number; // Normalised 0–100 value for display
-    description?: string;
+    metric_description: string;
+    value: number; 
+    value_explanation: string;
     // backend may include extra fields which we ignore
     [key: string]: unknown;
 }
@@ -13,6 +14,7 @@ interface ProgressPayload {
     turn: number;
     metrics: Metric[];
     next_tools: string[];
+    reasoning: string;
 }
 
 interface ResultPayload {
@@ -27,12 +29,13 @@ export function useAnalysis() {
     const [loading, setLoading] = useState(false);
     const [latestMsg, setLatestMsg] = useState("");
     const [justification, setJustification] = useState<string | null>(null);
+    const [reasoning, setReasoning] = useState<string | null>(null);
     const [logs, setLogs] = useState<string[]>([]);
 
     const esRef = useRef<EventSource | null>(null);
 
     const appendLog = (line: string) =>
-        setLogs((prev) => [...prev, line]);
+        setLogs((prev: string[]) => [...prev, line]);
 
     function start(address: string) {
         if (!address.trim()) return;
@@ -40,6 +43,7 @@ export function useAnalysis() {
         setRiskScore(null);
         setMetrics([]);
         setJustification(null);
+        setReasoning(null);
         setLogs([]);
         setLatestMsg("");
 
@@ -64,6 +68,10 @@ export function useAnalysis() {
                     console.log("[useAnalysis] progress", (e as MessageEvent).data);
                     const data = JSON.parse((e as MessageEvent).data) as ProgressPayload;
                     setMetrics(data.metrics);
+                    setReasoning(data.reasoning || null);
+                    if (data.reasoning && data.reasoning.trim()) {
+                        appendLog(`[Turn ${data.turn}] Reasoning:\n${data.reasoning}`);
+                    }
                     const logLine = `[Turn ${data.turn}] ` +
                         (data.next_tools.length
                             ? `Next tools → ${data.next_tools.join(", ")}`
@@ -80,6 +88,8 @@ export function useAnalysis() {
                     setRiskScore(data.risk_score);
                     setMetrics(data.metrics || []);
                     setJustification(data.justification || null);
+                    // Clear transient reasoning so the final JSON doesn't appear in the UI
+                    setReasoning(null);
                     setLatestMsg("Analysis complete");
                     appendLog("Received final result.");
                     setLoading(false);
@@ -126,7 +136,7 @@ export function useAnalysis() {
         latestMsg,
         logs,
         justification,
+        reasoning,
         start,
     };
 }
-

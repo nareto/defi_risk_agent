@@ -17,6 +17,7 @@ class LowTvlProtocolInput(BaseModel):
 
 class LowTvlProtocolOutput(BaseMetricOutput):
     metric_name: str = "Low-TVL Protocol Concentration"
+    metric_description: str = "The percentage of a wallet's assets that are deployed in protocols with a Total Value Locked (TVL) below a certain threshold, such as $5 million."
 
     percentage_exposure: float
 
@@ -35,7 +36,7 @@ def metric_calculate_low_tvl_protocol_concentration(
     if total_value == 0:
         return LowTvlProtocolOutput(
             percentage_exposure=0,
-            explanation="Wallet has no assets in DeFi protocols."
+            value_explanation="Wallet has no assets in DeFi protocols."
         )
 
     low_tvl_value = sum(
@@ -51,5 +52,5 @@ def metric_calculate_low_tvl_protocol_concentration(
 
     return LowTvlProtocolOutput(
         percentage_exposure=percentage,
-        explanation=explanation,
+        value_explanation=explanation,
     )

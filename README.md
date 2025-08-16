@@ -104,6 +104,6 @@ With the help of AI I came up with an extensive list of metrics that can be used
 
 1. Portfolio Concentration Index (HHI): calculated on the wallet's holdings to measure diversification. A score near 1 signifies high concentration in a single asset.
 2. Exotic & Unproven Asset Exposure: the percentage of a wallet's value held in assets that are outside the top 100–200 by market capitalization or have a very short history.
-3. Low-TVL Protocol Concentration: the percentage of a wallet's assets that are deployed in protocols with a Total Value Locked (TVL) below a certain threshold, such as $5 million.
+3. Low-TVL Protocol Concentration:  
 4. Portfolio Churn Rate: the value of assets swapped or transferred out over a period, calculated as a percentage of the wallet's average total value.
 5. Bridged Asset Exposure: the percentage of the wallet's total value that is held in bridged (non-native) assets.

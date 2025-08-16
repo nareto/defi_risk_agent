@@ -1,12 +1,12 @@
 import datetime as dt
+
 # import decimal
 
 from httpx import HTTPError
 import requests
 from langchain_core.tools import tool
 from src.utils import rate_limit
-from typing import Annotated 
-
+from typing import Annotated
 
 
 @tool
@@ -125,12 +125,15 @@ def api_coingecko_contract(address: str, chain: str = "ethereum"):
     # return r.json()
     # r.raise_for_status()
     data = r.json()
-    if 'error' in data and data['error'] == 'coin not found': raise HTTPError("Contract not present on coingecko")
+    if "error" in data and data["error"] == "coin not found":
+        raise HTTPError("Contract not present on coingecko")
     # market_cap = decimal.Decimal(data["market_data"]["market_cap"]["usd"])
     market_cap = data["market_data"]["market_cap"]["usd"]
+    current_price_usd = data["market_data"]["current_price"]["usd"]
     rank = data["market_cap_rank"]  # may be None for tiny tokens
     return {
         "symbol": data["symbol"],
+        "current_price_usd": current_price_usd,
         "market_cap_usd": market_cap,
         "market_cap_rank": rank,
     }
@@ -287,9 +290,11 @@ def api_coingecko_coin_data(coin_id):
 
     # market_cap = decimal.Decimal(data["market_data"]["market_cap"]["usd"])
     market_cap = data["market_data"]["market_cap"]["usd"]
+    current_price_usd = data["market_data"]["current_price"]["usd"]
     rank = data["market_cap_rank"]
     return {
         "symbol": data["symbol"],
+        "current_price_usd": current_price_usd,
         "market_cap_usd": market_cap,
         "market_cap_rank": rank,
         "genesis_date": dt.datetime.combine(

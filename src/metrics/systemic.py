@@ -15,10 +15,10 @@ class BridgedAssetExposureInput(BaseModel):
     assets: List[BridgedAsset]
 
 class BridgedAssetExposureOutput(BaseMetricOutput):
-    """Output for the Bridged Asset Exposure metric."""
     metric_name: str = "Bridged Asset Exposure"
-    percentage_exposure: float
+    metric_description: str = "The percentage of the wallet's total value that is held in bridged (non-native) assets."
 
+    percentage_exposure: float
 
     @property
     def value(self) -> float:
@@ -35,7 +35,7 @@ def metric_calculate_bridged_asset_exposure(
     if total_value == 0:
         return BridgedAssetExposureOutput(
             percentage_exposure=0,
-            explanation="Wallet has no assets."
+            value_explanation="Wallet has no assets."
         )
 
     bridged_value = sum(a.usd_value for a in data.assets if a.is_bridged)
@@ -46,5 +46,5 @@ def metric_calculate_bridged_asset_exposure(
 
     return BridgedAssetExposureOutput(
         percentage_exposure=percentage,
-        explanation=explanation,
+        value_explanation=explanation,
     )

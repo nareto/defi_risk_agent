@@ -4,9 +4,9 @@ from abc import ABC, abstractmethod
 class BaseMetricOutput(BaseModel):
     """Common interface for all metric tool outputs."""
 
-    metric_name: str = Field(..., description="Human readable metric name")
-    #description: str = Field(default="", description="Description of the metric")
-    explanation: str 
+    metric_name: str 
+    metric_description: str
+    value_explanation: str 
 
     @property
     @abstractmethod

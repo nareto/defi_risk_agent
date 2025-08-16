@@ -20,6 +20,8 @@ class PortfolioChurnRateInput(BaseModel):
 class PortfolioChurnRateOutput(BaseMetricOutput):
     """Output for the Portfolio Churn Rate metric."""
     metric_name: str = "Portfolio Churn Rate"
+    metric_description: str = "The value of assets swapped or transferred out over a period, calculated as a percentage of the wallet's average total value."
+
     churn_rate_percentage: float
 
     @property
@@ -53,5 +55,5 @@ def metric_calculate_portfolio_churn_rate(
 
     return PortfolioChurnRateOutput(
         churn_rate_percentage=churn_rate,
-        explanation=explanation,
+        value_explanation=explanation,
     )

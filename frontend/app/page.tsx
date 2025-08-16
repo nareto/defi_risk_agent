@@ -4,11 +4,12 @@ import React, { useState, useRef, useEffect } from "react";
 import { PieChart } from "react-minimal-pie-chart";
 import { useAnalysis } from "./hooks/useAnalysis";
 
-// ---------- Types ----------
+ // ---------- Types ----------
 interface Metric {
   metric_name: string;
+  metric_description: string;
   value: number;
-  description?: string;
+  value_explanation: string;
   [key: string]: unknown; // allow extra unseen fields
 }
 
@@ -47,26 +48,36 @@ const Gauge = ({ value }: { value: number }) => {
 };
 
 const BarChart = ({ metrics }: { metrics: Metric[] }) => {
-  const chartData = metrics
-    .filter((m) => m.value > 0)
-    .map((m) => ({ name: m.metric_name, value: m.value }));
+  const visible = metrics.filter((m) => m.value > 0);
 
-  if (chartData.length === 0) return null;
+  if (visible.length === 0) return null;
 
   return (
-    <div className="w-full space-y-2 mt-4 self-stretch">
-      {chartData.map((d) => (
-        <div key={d.name} className="flex items-center gap-2">
-          <div className="w-1/3 text-xs text-gray-600 truncate" title={d.name}>
-            {d.name}
+    <div className="w-full space-y-3 mt-4 self-stretch">
+      {visible.map((m) => (
+        <div key={m.metric_name} className="flex gap-2">
+          <div className="w-1/3 text-xs text-gray-600 truncate" title={m.metric_name}>
+            {m.metric_name}
           </div>
-          <div className="w-2/3 bg-gray-200 rounded-full h-4">
-            <div
-              className="bg-blue-500 h-4 rounded-full text-white text-xs flex items-center justify-end pr-2"
-              style={{ width: `${Math.min(d.value, 100)}%` }}
-            >
-              {d.value.toFixed(0)}%
+          <div className="w-2/3">
+            <div className="bg-gray-200 rounded-full h-4">
+              <div
+                className="bg-blue-500 h-4 rounded-full text-white text-xs flex items-center justify-end pr-2"
+                style={{ width: `${Math.min(m.value, 100)}%` }}
+              >
+                {m.value.toFixed(0)}%
+              </div>
             </div>
+            {m.value_explanation && (
+              <div className="text-[11px] text-gray-700 mt-1">
+                {m.value_explanation}
+              </div>
+            )}
+            {m.metric_description && (
+              <div className="text-[11px] text-gray-500">
+                {m.metric_description}
+              </div>
+            )}
           </div>
         </div>
       ))}
@@ -81,7 +92,7 @@ export default function HomePage() {
   const [showLogs, setShowLogs] = useState(false);
 
   /* ---------------- Analysis hook ---------------- */
-  const { riskScore, metrics, loading, latestMsg, logs, justification, start } = useAnalysis();
+  const { riskScore, metrics, loading, latestMsg, logs, justification, reasoning, start } = useAnalysis();
 
   /* ---------------- Refs ---------------- */
   const logRef = useRef<HTMLPreElement>(null);
@@ -137,6 +148,14 @@ export default function HomePage() {
               <p className="text-center text-sm text-gray-700 min-h-[1.5rem]">
                 {latestMsg || "Thinking…"}
               </p>
+              {reasoning && (
+                <div className="w-full">
+                  <div className="text-xs font-medium text-gray-500 mb-1">Reasoning</div>
+                  <pre className="text-xs text-gray-800 bg-gray-100 rounded p-2 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                    {reasoning}
+                  </pre>
+                </div>
+              )}
             </>
           )}
 
@@ -148,6 +167,14 @@ export default function HomePage() {
                   {justification}
                 </p>
               )}
+              {reasoning && (
+                <div className="w-full">
+                  <div className="text-xs font-medium text-gray-500 mb-1">Reasoning</div>
+                  <pre className="text-xs text-gray-800 bg-gray-100 rounded p-2 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                    {reasoning}
+                  </pre>
+                </div>
+              )}
               <BarChart metrics={metrics.filter((m: Metric) => m.metric_name !== "Risk Score")} />
             </>
           )}
@@ -158,18 +185,28 @@ export default function HomePage() {
       {logs.length > 0 && (
         <div className="rounded border shadow bg-white p-4">
           <button
-            onClick={() => setShowLogs((s) => !s)}
+            onClick={() => setShowLogs((s: boolean) => !s)}
             className="text-sm font-medium text-blue-600 hover:underline mb-2"
           >
             {showLogs ? "Hide" : "Show"} agent thought process ({logs.length} lines)
           </button>
           {showLogs && (
-            <pre
-              ref={logRef}
-              className="h-60 overflow-y-auto whitespace-pre-wrap rounded border bg-gray-100 text-gray-800 p-2 text-xs"
-            >
-              {logs.join("\n")}
-            </pre>
+            <div className="space-y-2">
+              {reasoning && (
+                <>
+                  <div className="text-xs font-medium text-gray-500">Reasoning</div>
+                  <pre className="text-xs text-gray-800 bg-gray-100 rounded p-2 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                    {reasoning}
+                  </pre>
+                </>
+              )}
+              <pre
+                ref={logRef}
+                className="h-60 overflow-y-auto whitespace-pre-wrap rounded border bg-gray-100 text-gray-800 p-2 text-xs"
+              >
+                {logs.join("\n")}
+              </pre>
+            </div>
           )}
         </div>
       )}
