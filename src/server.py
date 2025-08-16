@@ -5,7 +5,7 @@ from uuid import uuid4
 import asyncio
 import logging
 import json
-from typing import AsyncGenerator, Dict, Any
+from typing import AsyncGenerator, Dict, Any, Optional
 from contextlib import asynccontextmanager
 import os
 
@@ -104,6 +104,7 @@ def _start_job(
                 # Try to detect the next tool(s) that the AI wants to call so the
                 # frontend can show richer progress.
                 next_tools: list[str] = []
+                reasoning: Optional[str] = None
                 try:
                     msgs = state_dict.get("messages", [])
                     if msgs:
@@ -111,11 +112,12 @@ def _start_job(
                         # Depending on (de)serialisation round-trips, the message can
                         # either be a dict (after JSON round-trip) or an actual
                         # BaseMessage instance.  Handle both.
-                        tc_list = None
                         if isinstance(last_msg, dict):
                             tc_list = last_msg.get("tool_calls")
+                            reasoning = last_msg.get("content")
                         else:
                             tc_list = getattr(last_msg, "tool_calls", None)
+                            reasoning = getattr(last_msg, "content", None)
                         if tc_list:
                             next_tools = [tc.get("name") for tc in tc_list if tc]
                 except Exception:
@@ -126,6 +128,7 @@ def _start_job(
                     "turn": state_dict.get("turn_count"),
                     "metrics": state_dict.get("metrics", []),
                     "next_tools": next_tools,
+                    "reasoning": reasoning,
                 }
                 await queue.put({"type": "progress", "payload": payload})
 
